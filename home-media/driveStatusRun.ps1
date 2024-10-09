@@ -9,7 +9,7 @@ Set-Location -Path 'C:\workspace\scripts'
 if (-not (Test-Path .)) { exit }
 
 git pull
-cd home-page
+cd home-media
 .\smbConnectionResults.ps1
 
 Set-Location -Path 'C:\workspace\drive-status'

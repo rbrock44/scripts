@@ -41,8 +41,8 @@ $jsonOutput = @{
 
 
 # edit this more, to save and push
-$outFile = "MediaServerConnectionResults.json"
+$outFile = "C:\workspace\drive-status\MediaServerConnectionResults.json"
 
-$jsonOutput | ConvertTo-Json| Out-File $outFile
+$jsonOutput | ConvertTo-Json | Out-File -FilePath $outFile -Encoding utf8
 
 Write-Output "SMB connection status has been recorded in ${outFile}"
