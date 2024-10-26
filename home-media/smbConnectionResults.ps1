@@ -40,6 +40,6 @@ foreach ($server in $servers) {
 $outFile = "C:\workspace\drive-status\MediaServerConnectionResults.json"
 
 # Convert the results to JSON and save to a file
-$jsonOutput | ConvertTo-Json -Depth 4 | Out-File $outFile
+$jsonOutput | ConvertTo-Json | Out-File -FilePath $outFile -Encoding utf8
 
 Write-Output "SMB connection status has been recorded in ${outFile}"

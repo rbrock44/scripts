@@ -9,6 +9,9 @@ git pull
 Set-Location -Path 'C:\workspace\scripts\home-media'
 if (-not (Test-Path .)) { exit }
 
+git stash
+git checkout master
+git pull
 .\smbConnectionResults.ps1  # Replace with the actual script name
 
 Set-Location -Path 'C:\workspace\drive-status'
