@@ -20,6 +20,8 @@ foreach ($server in $servers) {
         # Try to connect to the SMB share without credentials
         $connectionResult = net use * $server.ServerPath 2>&1
     }
+	
+	$driveLetter = ($connectionResult -match '([A-Z]):\\' | Out-Null; $matches[1])
 
     # Check if the connection was successful
     if ($connectionResult -like "*The command completed successfully.*") {
@@ -27,6 +29,15 @@ foreach ($server in $servers) {
     } else {
         $status = "Not Connected"
     }
+	
+	if ($status -eq "Connected" -and $driveLetter) {
+		# Disconnect the mapped drive
+		try {
+			net use "$driveLetter:" /delete
+		} catch {
+			Write-Output "Failed to disconnect drive $driveLetter."
+		}
+	}
 
     # Add the result to the output array
     $jsonOutput.results += @{
