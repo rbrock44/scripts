@@ -18,10 +18,13 @@ foreach ($server in $servers) {
         $connectionResult = net use * $server.ServerPath /user:$server.Username $server.Password 2>&1
     } else {
         # Try to connect to the SMB share without credentials
-        $connectionResult = net use * $server.ServerPath 2>&1
+        $connectionResult = (net use * $server.ServerPath 2>&1)
     }
 	
-	$driveLetter = ($connectionResult -match '([A-Z]):\\' | Out-Null; $matches[1])
+	$driveLetter = $null
+    if ($connectionResult -match '([A-Z]):\\') {
+        $driveLetter = $matches[1]
+    }
 
     # Check if the connection was successful
     if ($connectionResult -like "*The command completed successfully.*") {
@@ -33,7 +36,7 @@ foreach ($server in $servers) {
 	if ($status -eq "Connected" -and $driveLetter) {
 		# Disconnect the mapped drive
 		try {
-			net use "$driveLetter:" /delete
+			net use "$($driveLetter):" /delete
 		} catch {
 			Write-Output "Failed to disconnect drive $driveLetter."
 		}
