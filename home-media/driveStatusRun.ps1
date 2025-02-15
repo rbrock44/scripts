@@ -12,7 +12,7 @@ if (-not (Test-Path .)) { exit }
 git stash
 git checkout master
 git pull
-.\smbConnectionResults.ps1  # Replace with the actual script name
+.\smbConnectionResults.ps1 
 
 Set-Location -Path 'C:\workspace\drive-status'
 if (-not (Test-Path .)) { exit }
