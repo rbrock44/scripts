@@ -6,6 +6,9 @@ This repo hold various scripts used in my ecosystem of processes and application
 
 ## List of Scripts
 
+* Bash
+  * .bashrc
+    * Useful bash aliases that enhance my life
 * Home-Media
   * driveStatusRun.ps1
     * Should be synced with task scheduler to get retrieve automatic git pushes of (drive-status's)[https://github.com/rbrock44/drive-status], kicks off smbConnectionResults.ps1
