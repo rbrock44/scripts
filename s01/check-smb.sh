@@ -14,14 +14,16 @@ declare -A pushUrls=(
   ["usbf"]="http://10.0.0.150:3002/api/push/N2Z0YLfMUv?status=up&msg=OK&ping="
 )
 
+datetime=$(date '+%Y-%m-%d %H:%M:%S')
+
 for name in "${!shares[@]}"; do
   mountpoint="/mnt/check-$name"
   mkdir -p "$mountpoint"
   if mount -t cifs -o guest "${shares[$name]}" "$mountpoint" &> /dev/null; then
     curl -s "${pushUrls[$name]}" > /dev/null
-    echo "$name is up"
+    echo "$name is up - $datetime"
     umount "$mountpoint"
   else
-    echo "$name is down"
+    echo "$name is down - $datetime"
   fi
 done
