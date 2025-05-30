@@ -1,3 +1,5 @@
+#!/bin/bash
+
 declare -A shares=(
   ["usbc"]="//10.0.0.50/usbc"
   ["usbd"]="//10.0.0.50/usbd"
