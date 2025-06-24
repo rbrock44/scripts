@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Careers Button Injector
+// @name         LinkedIn Careers Button Injector
 // @namespace    http://tampermonkey.net/
 // @version      1.0
 // @description  Add a "${Company Name} Careers" button to job postings

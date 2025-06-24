@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Indeed Job Excel Scraper
+// @name         Indeed Job Excel Scraper and Career Button
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Add line to clipboard to paste in job posting excel file
 // @author       You
 // @match        https://www.indeed.com/viewjob*
@@ -17,6 +17,7 @@
     const TARGET_CONTAINER_SELECTOR = '.jobsearch-JobInfoHeader-title-container';
     const MAX_RETRIES = 10;
     const RETRY_INTERVAL_MS = 500;
+    const BUTTON_ID = 'indeed-careers-button';
 
     function copyToClipboard(text) {
         navigator.clipboard.writeText(text).then(() => {
@@ -63,6 +64,29 @@
         return window.location.href;
     }
 
+    function createCareersButton(companyName) {
+        const button = document.createElement('button');
+        button.textContent = 'Go To Careers';
+        button.id = BUTTON_ID;
+
+        button.style.backgroundColor = '#2557a7';
+        button.style.color = '#fff';
+        button.style.border = 'none';
+        button.style.borderRadius = '20px';
+        button.style.padding = '10px 16px';
+        button.style.cursor = 'pointer';
+        button.style.fontWeight = 'bold';
+        button.style.marginTop = '12px';
+        button.style.display = 'block';
+
+        button.addEventListener('click', () => {
+            const query = encodeURIComponent(`${companyName} careers`);
+            window.open(`https://www.google.com/search?q=${query}`, '_blank');
+        });
+
+        return button;
+    }
+
     function createCopyButton() {
         const button = document.createElement('button');
         button.textContent = 'Copy Job Data';
@@ -86,7 +110,9 @@
                 return;
             }
 
-            const jobTitle = jobTitleElement.textContent.trim().replace('Copy Job Data','');
+            const jobTitle = jobTitleElement.textContent.trim()
+                .replace('Copy Job Data','')
+                .replace('Go To Careers', '');
             const company = companyElement.textContent.trim();
             const websiteFirstFound = 'Indeed';
             const appliedOnCompanySite = '';
@@ -121,13 +147,23 @@
         const jobTitleElement = document.querySelector(JOB_TITLE_SELECTOR);
 
         if (targetContainer && companyElement && jobTitleElement && companyElement.textContent.trim() && jobTitleElement.textContent.trim()) {
-            if (document.getElementById('copy-job-data-button')) return;
 
-            const button = createCopyButton();
-            button.id = 'copy-job-data-button';
+            if (!document.getElementById('copy-job-data-button') ) {
+                const button = createCopyButton();
+                button.id = 'copy-job-data-button';
 
-            targetContainer.appendChild(button);
-            console.log('Copy Job Data button injected successfully!');
+                targetContainer.appendChild(button);
+                console.log('Indeed copy job data button injected successfully!');
+            }
+
+            if (!document.getElementById(BUTTON_ID) ) {
+                const button = createCareersButton(companyElement.textContent.trim());
+
+                targetContainer.appendChild(button);
+                console.log('Indeed career button injected successfully!');
+
+            }
+
         } else if (retriesLeft > 0) {
             console.log('Retrying injection... Retries left:', retriesLeft);
             setTimeout(() => tryInject(retriesLeft - 1), RETRY_INTERVAL_MS);
