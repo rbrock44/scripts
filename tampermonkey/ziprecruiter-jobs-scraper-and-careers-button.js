@@ -88,7 +88,7 @@
 
         const targetDiv = innerDivs[1];
         const companyElement = targetDiv.querySelector('a');
-        const jobTitleElement = targetDiv.querySelector('h1');
+        const jobTitleElement = targetDiv.querySelector('h2');
 
         if (!companyElement || !companyElement.textContent.trim() || !jobTitleElement) return;
 
