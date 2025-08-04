@@ -1,10 +1,31 @@
-# Scripts Readme
+# Scripts
 
-This repo hold various scripts used in my ecosystem of processes and applications
+> This project holds various scripts used in my ecosystem of processes and applications <br/>
 
-<br/>
+---
 
-## List of Scripts
+## 📚 Table of Contents
+
+- [What's My Purpose?](#-whats-my-purpose)
+- [How to Use](#-how-to-use)
+  - [List of Scripts](#list-of-scripts)
+- [Technologies](#-technologies)
+- [Getting Started (Local Setup)](#-getting-started-local-setup)
+  - [Run Locally](#run-locally)
+
+---
+
+## 🧠 What's My Purpose?
+
+This project holds various scripts used in my ecosystem of processes and applications. Its grown to include several technologies  
+
+---
+
+## 🚦 How to Use
+
+---
+
+### List of Scripts
 
 * Bash
   * .bashrc
@@ -37,3 +58,26 @@ This repo hold various scripts used in my ecosystem of processes and application
 * windows
   * home-page-media-uploader.sh
     * Reads media files from Open Media Vault drive folders and pushed to github repo (media-file)[(https://github.com/rbrock44/home-page-media-file)]
+
+---
+
+## 🛠 Technologies
+
+- Bash
+- Powershell
+- Javascript
+
+---
+
+## 🚀 Getting Started (Local Setup)
+
+* Install [node](https://nodejs.org/en)
+* Clone [repo](https://github.com/rbrock44/scripts)
+
+---
+
+### Run Locally
+
+Run a script in the appropiate terminal
+
+---
