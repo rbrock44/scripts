@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         LinkedIn Careers Button Injector
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Add a "${Company Name} Careers" button to job postings
 // @author       You
+// @match        *://*.linkedin.com/jobs/view/*
 // @match        https://www.linkedin.com/jobs/view/*
 // @match        https://linkedin.com/jobs/view/*
 // @match        *linkedin.com/jobs/view*
@@ -13,7 +14,6 @@
 
 (function () {
     'use strict';
-    const COMPANY_LINK_SELECTOR = '.jobs-details .p5 .job-details-jobs-unified-top-card__company-name';
     const MAX_RETRIES = 10;
     const RETRY_INTERVAL_MS = 500;
 
@@ -40,7 +40,8 @@
     }
 
     function tryInject(retriesLeft) {
-        const companyLink = document.querySelector(COMPANY_LINK_SELECTOR);
+        // 7th a tag
+        const companyLink = document.querySelectorAll('a')[6];
 
         if (companyLink && companyLink.textContent.trim()) {
             const companyName = companyLink.textContent.trim();
@@ -53,6 +54,7 @@
 
             // Append the button below the company name section
             companyLink.parentElement.appendChild(button);
+            console.log('Career button injected after second save button!');
         } else if (retriesLeft > 0) {
             console.log('Retying: retries lefft: ', retriesLeft);
             setTimeout(() => tryInject(retriesLeft - 1), RETRY_INTERVAL_MS);
