@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         LinkedIn Job Excel Scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Add line to clipboard to paste in job posting Excel file (LinkedIn version)
 // @author       You
+// @include      *linkedin.com/jobs/view*
 // @match        https://www.linkedin.com/jobs/view/*
 // @grant        none
 // @run-at       document-end
@@ -12,8 +13,6 @@
 (function () {
     'use strict';
 
-    const JOB_TITLE_SELECTOR = '.job-details-jobs-unified-top-card__job-title';
-    const COMPANY_SELECTOR = '.job-details-jobs-unified-top-card__company-name';
     const INSERT_AFTER_SELECTOR = '.jobs-save-button';
     const MAX_RETRIES = 10;
     const RETRY_INTERVAL_MS = 500;
@@ -78,8 +77,10 @@
         });
 
         button.addEventListener('click', () => {
-            const jobTitleElement = document.querySelector(JOB_TITLE_SELECTOR);
-            const companyElement = document.querySelector(COMPANY_SELECTOR);
+            // 7th a tag
+            const companyElement = document.querySelectorAll('a')[6];
+            // 4th p tag
+            const jobTitleElement = document.querySelectorAll('p')[3];
 
             if (!jobTitleElement || !companyElement) {
                 alert('Could not find job title or company name.');
@@ -116,9 +117,11 @@
     }
 
     function tryInject(retriesLeft) {
-        const saveButtons = document.querySelectorAll('.jobs-save-button');
-        const companyLink = document.querySelector('.job-details-jobs-unified-top-card__company-name');
-        const jobTitle = document.querySelector('.job-details-jobs-unified-top-card__job-title');
+        const saveButtons = document.querySelectorAll('[data-view-name="job-save-button"]');
+        // 7th a tag
+        const companyLink = document.querySelectorAll('a')[6];
+        // 4th p tag
+        const jobTitle = document.querySelectorAll('p')[3];
 
         if (saveButtons.length >= 2 && companyLink && jobTitle && companyLink.textContent.trim() && jobTitle.textContent.trim()) {
             // Check if button already exists
@@ -133,6 +136,7 @@
 
             console.log('Copy Job Data button injected after second save button!');
         } else if (retriesLeft > 0) {
+            console.log(saveButtons.length,companyLink,jobTitle, companyLink.textContent.trim(), jobTitle.textContent.trim());
             console.log('Retrying: retries left: ', retriesLeft);
             setTimeout(() => tryInject(retriesLeft - 1), RETRY_INTERVAL_MS);
         } else {
