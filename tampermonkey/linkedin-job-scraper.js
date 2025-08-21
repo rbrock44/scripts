@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LinkedIn Job Excel Scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.3
 // @description  Add line to clipboard to paste in job posting Excel file (LinkedIn version)
 // @author       You
 // @include      *linkedin.com/jobs/view*
@@ -13,7 +13,6 @@
 (function () {
     'use strict';
 
-    const INSERT_AFTER_SELECTOR = '.jobs-save-button';
     const MAX_RETRIES = 10;
     const RETRY_INTERVAL_MS = 500;
 
@@ -78,9 +77,9 @@
 
         button.addEventListener('click', () => {
             // 7th a tag
-            const companyElement = document.querySelectorAll('a')[6];
+            const companyElement = document.querySelectorAll('a')[9];
             // 4th p tag
-            const jobTitleElement = document.querySelectorAll('p')[3];
+            const jobTitleElement = document.querySelectorAll('h1')[0];
 
             if (!jobTitleElement || !companyElement) {
                 alert('Could not find job title or company name.');
@@ -117,7 +116,7 @@
     }
 
     function tryInject(retriesLeft) {
-        const saveButtons = document.querySelectorAll('[data-view-name="job-save-button"]');
+        const saveButtons = document.querySelectorAll('.jobs-save-button');
         // 7th a tag
         const companyLink = document.querySelectorAll('a')[6];
         // 4th p tag
