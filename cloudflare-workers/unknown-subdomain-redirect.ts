@@ -10,6 +10,7 @@ const allowedSubdomains = [
   "email-link-generator",
   "family-recipes",
   "flash-cards",
+  "google-drive-viewer",
   "home-page-api",
   "home-page",
   "lost",
