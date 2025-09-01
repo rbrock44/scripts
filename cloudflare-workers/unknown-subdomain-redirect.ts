@@ -7,6 +7,7 @@ const allowedSubdomains = [
   "connect-4",
   "directory",
   "drive-status",
+  "enderle-cattle-co",
   "email-link-generator",
   "family-recipes",
   "flash-cards",
