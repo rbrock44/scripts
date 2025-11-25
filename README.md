@@ -28,8 +28,9 @@ This project holds various scripts used in my ecosystem of processes and applica
 ### List of Scripts
 
 * Bash
-  * .bashrc
-    * Useful bash aliases that enhance my life
+  * Useful bash aliases that enhance my life. Move the following to C:\Users\<user>
+    * .bashrc
+    * .bash_profile
 * Home-Media
   * driveStatusRun.ps1
     * Should be synced with task scheduler to get retrieve automatic git pushes of (drive-status's)[https://github.com/rbrock44/drive-status], kicks off smbConnectionResults.ps1
