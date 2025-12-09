@@ -9,6 +9,11 @@ Set-Alias -Name ga     -Value "git add ."
 
 Set-Alias -Name prod     -Value "npm run prod"
 
+function gpushn {
+    git push --set-upstream origin $(git rev-parse --abbrev-ref HEAD)
+}
+Set-Alias gpushn gpushn
+
 Import-Module -Name Terminal-Icons
 Import-Module PSReadLine 
 Set-PSReadLineKeyHandler -Chord "Ctrl+f" -Function ForwardWord
