@@ -7,3 +7,4 @@ alias gc='git checkout'
 alias ga='git add .'
 alias gcm='git commit -m'
 alias prod='npm run prod'
+alias gro=git reset --hard @{u}
