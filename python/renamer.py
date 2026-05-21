@@ -97,14 +97,13 @@ def suggest_name(filename: str, separator: str) -> str:
 # ─────────────────────────────────────────────
 def load_files(cfg: dict) -> list[dict]:
     """Recursively walk run_directory, skipping ignored dirs and files."""
-    run_dir      = Path(cfg["run_directory"]).expanduser().resolve()
+    run_dir       = Path(cfg["run_directory"]).expanduser().resolve()
     ignored_files = set(cfg.get("ignored_files", []))
     ignored_dirs  = set(cfg.get("ignored_dirs",  []))
 
     entries = []
     try:
         for dirpath, dirs, filenames in os.walk(run_dir):
-            # Prune ignored directories in-place so os.walk won't descend
             dirs[:] = [
                 d for d in dirs
                 if d not in ignored_dirs
@@ -124,7 +123,7 @@ def load_files(cfg: dict) -> list[dict]:
                     "suggested": suggest_name(fname, cfg["separator"]),
                     "queued":    False,
                     "new_name":  None,
-                    "action":    None,  # "rename" | "moveup"
+                    "action":    None,  # "rename" | "add" | "moveup"
                 })
 
         entries.sort(key=lambda e: (e["directory"], e["name"]))
@@ -134,32 +133,105 @@ def load_files(cfg: dict) -> list[dict]:
 
 
 # ─────────────────────────────────────────────
-#  Adaptive column layout
+#  Adaptive column layout + wrapping
 # ─────────────────────────────────────────────
-# Fixed widths that don't scale
 ID_W     = 5
-STATUS_W = 12   # "● RENAME" or "● MOVE UP"
-GAP      = 2    # spaces between every column
+STATUS_W = 12   # "● RENAME" / "● MOVE UP" / "● ADD"
+GAP      = 2
 
 def _col_widths(total_width: int) -> tuple[int, int, int]:
-    """
-    Return (dir_w, name_w, suggested_w) that fill the available space.
-    Remaining space after ID and STATUS is split: 30% dir, 35% name, 35% suggested.
-    """
-    available = total_width - ID_W - STATUS_W - (GAP * 4)
-    available = max(available, 30)
+    """30% dir · 35% current · 35% suggested of the flexible space."""
+    available = max(30, total_width - ID_W - STATUS_W - (GAP * 4))
     dir_w  = max(10, int(available * 0.30))
     name_w = max(10, int(available * 0.35))
     sug_w  = max(10, available - dir_w - name_w)
     return dir_w, name_w, sug_w
 
 
-def _trunc(s: str, n: int) -> str:
-    return s if len(s) <= n else s[:n - 1] + "…"
+def _wrap(text: str, width: int) -> list[str]:
+    """
+    Break `text` into lines of at most `width` chars.
+    Tries to split on path separators (/ or .) first, then hard-wraps.
+    The first line is returned as-is (padded); continuation lines are
+    prefixed with a small continuation marker.
+    """
+    if len(text) <= width:
+        return [text.ljust(width)]
 
-def _pad(s: str, n: int) -> str:
-    """Pad or truncate plain string to exactly n chars (no ANSI)."""
-    return _trunc(s, n).ljust(n)
+    lines = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= width:
+            lines.append(remaining.ljust(width))
+            break
+        # Try to find a nice break point (/ . _ - space) within the width
+        chunk = remaining[:width]
+        break_at = max(
+            chunk.rfind("/"),
+            chunk.rfind("."),
+            chunk.rfind("_"),
+            chunk.rfind("-"),
+            chunk.rfind(" "),
+        )
+        if break_at > width // 3:          # only use it if reasonably far in
+            lines.append(remaining[:break_at + 1].ljust(width))
+            remaining = remaining[break_at + 1:]
+        else:
+            lines.append(remaining[:width])
+            remaining = remaining[width:]
+
+    return lines
+
+
+def _render_row(
+    idx_str: str,
+    ddir: str, dir_w: int,
+    cur: str,  name_w: int,
+    sug: str,  sug_w: int,
+    status_str: str,
+    *,
+    color_idx, color_dir, color_cur, color_sug, color_status,
+) -> str:
+    """
+    Render a multi-line table row.  Each cell is independently word-wrapped
+    to its column width; all columns are padded to the same number of lines.
+    """
+    sp = " " * GAP
+
+    dir_lines  = _wrap(ddir, dir_w)
+    cur_lines  = _wrap(cur,  name_w)
+    sug_lines  = _wrap(sug,  sug_w)
+    n_lines    = max(len(dir_lines), len(cur_lines), len(sug_lines))
+
+    # Pad all columns to the same height
+    def _extend(lst, width):
+        while len(lst) < n_lines:
+            lst.append(" " * width)
+        return lst
+
+    dir_lines = _extend(dir_lines, dir_w)
+    cur_lines = _extend(cur_lines, name_w)
+    sug_lines = _extend(sug_lines, sug_w)
+
+    out_lines = []
+    for i in range(n_lines):
+        if i == 0:
+            id_part     = c(f"{idx_str:<{ID_W}}", color_idx)
+            status_part = c(status_str, color_status)
+        else:
+            id_part     = " " * ID_W
+            status_part = ""
+
+        row = (
+            id_part
+            + c(dir_lines[i]  + sp, color_dir)
+            + c(cur_lines[i]  + sp, color_cur)
+            + c(sug_lines[i]  + sp, color_sug)
+            + status_part
+        )
+        out_lines.append(f"  {row}")
+
+    return "\n".join(out_lines)
 
 
 # ─────────────────────────────────────────────
@@ -175,7 +247,6 @@ def print_table(entries: list[dict], run_dir: str = "—", config_path: str = "�
 
     dir_w, name_w, sug_w = _col_widths(tw)
 
-    # Header
     header = (
         f"{'ID':<{ID_W}}"
         f"{'DIRECTORY':<{dir_w + GAP}}"
@@ -187,37 +258,49 @@ def print_table(entries: list[dict], run_dir: str = "—", config_path: str = "�
     print(c("  " + "─" * (tw - 4), DIM))
 
     for i, e in enumerate(entries, start=1):
-        idx  = f"{i:<{ID_W}}"
-        ddir = _pad(e["directory"], dir_w)
-        cur  = _pad(e["name"], name_w)
         sug_raw = e["new_name"] if e["new_name"] else e["suggested"]
-        sug  = _pad(sug_raw, sug_w)
 
-        sp = " " * GAP
+        action = e["action"] if e["queued"] else None
 
-        if e["queued"] and e["action"] == "moveup":
-            status = c("● MOVE UP", MAGENTA + BOLD)
-            row = (c(idx, BOLD)
-                   + c(ddir + sp, DIM)
-                   + c(cur  + sp, WHITE)
-                   + c(sug  + sp, MAGENTA + BOLD)
-                   + status)
-        elif e["queued"] and e["action"] == "rename":
-            status = c("● RENAME", YELLOW + BOLD)
-            row = (c(idx, BOLD)
-                   + c(ddir + sp, DIM)
-                   + c(cur  + sp, WHITE)
-                   + c(sug  + sp, YELLOW + BOLD)
-                   + status)
+        if action == "moveup":
+            status_str   = "● MOVE UP"
+            color_status = MAGENTA + BOLD
+            color_idx    = BOLD
+            color_dir    = DIM
+            color_cur    = WHITE
+            color_sug    = MAGENTA + BOLD
+        elif action == "rename":
+            status_str   = "● RENAME"
+            color_status = YELLOW + BOLD
+            color_idx    = BOLD
+            color_dir    = DIM
+            color_cur    = WHITE
+            color_sug    = YELLOW + BOLD
+        elif action == "add":
+            status_str   = "● ADD"
+            color_status = GREEN + BOLD
+            color_idx    = BOLD
+            color_dir    = DIM
+            color_cur    = WHITE
+            color_sug    = GREEN + BOLD
         else:
-            status = c("○", DIM)
-            row = (c(idx, BOLD)
-                   + c(ddir + sp, DIM)
-                   + c(cur  + sp, WHITE)
-                   + c(sug  + sp, DIM)
-                   + status)
+            status_str   = "○"
+            color_status = DIM
+            color_idx    = BOLD
+            color_dir    = DIM
+            color_cur    = WHITE
+            color_sug    = DIM
 
-        print(f"  {row}")
+        print(_render_row(
+            str(i),
+            e["directory"], dir_w,
+            e["name"],      name_w,
+            sug_raw,        sug_w,
+            status_str,
+            color_idx=color_idx, color_dir=color_dir,
+            color_cur=color_cur, color_sug=color_sug,
+            color_status=color_status,
+        ))
 
     print(c("\n  " + "─" * (tw - 4), DIM))
     _print_commands()
@@ -225,16 +308,17 @@ def print_table(entries: list[dict], run_dir: str = "—", config_path: str = "�
 
 def _print_commands():
     cmds = [
-        ("rn / rename <id>",           "Queue file for rename (opens suggested name to edit)"),
-        ("mu / moveup <id|list|range>", "Move file(s) up one directory"),
-        ("i  / ignore <id|list|range>", "Ignore file(s) — persists to config"),
-        ("rm / remove <id|list|range>", "Remove file(s) from queue"),
-        ("exe / execute",              "Execute all queued actions"),
-        ("q  / quit / exit",           "Quit"),
+        ("rn / rename <id>",            "Queue a file for rename — opens suggested name to edit"),
+        ("add <id|list|range>",         "Queue file(s) using the suggested name as-is"),
+        ("mu / moveup <id|list|range>",  "Move file(s) up one directory"),
+        ("i  / ignore <id|list|range>",  "Ignore file(s) — persists to config"),
+        ("rm / remove <id|list|range>",  "Remove file(s) from queue"),
+        ("exe / execute",               "Execute all queued actions"),
+        ("q  / quit / exit",            "Quit"),
     ]
     print(c("  COMMANDS\n", BOLD))
     for cmd, desc in cmds:
-        print(f"  {c(f'{cmd:<30}', CYAN + BOLD)}{c(desc, DIM)}")
+        print(f"  {c(f'{cmd:<32}', CYAN + BOLD)}{c(desc, DIM)}")
     print()
 
 
@@ -271,7 +355,7 @@ def parse_ids(token: str, max_id: int) -> list[int]:
 #  Command handlers
 # ─────────────────────────────────────────────
 def cmd_rn(args: str, entries: list[dict]):
-    """Queue a file for rename, letting the user edit the suggested name."""
+    """Queue a single file for rename with user editing."""
     if not args.strip().isdigit():
         print(c("[error] rn expects a single numeric ID.", RED))
         input(c("  [Enter to continue]", DIM))
@@ -300,6 +384,25 @@ def cmd_rn(args: str, entries: list[dict]):
     input(c("  [Enter to continue]", DIM))
 
 
+def cmd_add(args: str, entries: list[dict]):
+    """Queue file(s) using their suggested name without prompting."""
+    try:
+        indices = parse_ids(args, len(entries))
+    except ValueError as exc:
+        print(c(f"[error] {exc}", RED))
+        input(c("  [Enter to continue]", DIM))
+        return
+
+    for idx in indices:
+        e = entries[idx]
+        e["new_name"] = e["suggested"]
+        e["queued"]   = True
+        e["action"]   = "add"
+        print(c(f"  ✓ Queued add: {e['name']}  →  {e['suggested']}", GREEN))
+
+    input(c("  [Enter to continue]", DIM))
+
+
 def cmd_moveup(args: str, entries: list[dict], run_dir: Path):
     """Queue file(s) to be moved up one directory."""
     try:
@@ -310,17 +413,10 @@ def cmd_moveup(args: str, entries: list[dict], run_dir: Path):
         return
 
     for idx in indices:
-        e = entries[idx]
+        e            = entries[idx]
         current_path = e["path"]
         parent       = current_path.parent
         grandparent  = parent.parent
-
-        # Safety: don't move above the run_directory
-        try:
-            grandparent.relative_to(run_dir)
-            above_root = False
-        except ValueError:
-            above_root = grandparent == run_dir.parent or not str(grandparent).startswith(str(run_dir))
 
         if parent == run_dir:
             print(c(f"  [skip] {e['name']} is already at the root of the run directory.", YELLOW))
@@ -329,7 +425,7 @@ def cmd_moveup(args: str, entries: list[dict], run_dir: Path):
         dest = grandparent / e["name"]
         e["queued"]   = True
         e["action"]   = "moveup"
-        e["new_name"] = str(dest)   # store full destination path for execute
+        e["new_name"] = str(dest)
         print(c(f"  ✓ Queued move up: {e['directory']}/{e['name']}  →  {grandparent.name}/", MAGENTA))
 
     input(c("  [Enter to continue]", DIM))
@@ -376,7 +472,7 @@ def cmd_rm(args: str, entries: list[dict]):
 
 
 def cmd_execute(entries: list[dict], run_dir: Path):
-    """Execute all queued rename and move-up actions."""
+    """Execute all queued rename, add, and move-up actions."""
     queued = [e for e in entries if e["queued"]]
     if not queued:
         print(c("  No actions queued.", YELLOW))
@@ -385,12 +481,12 @@ def cmd_execute(entries: list[dict], run_dir: Path):
 
     print(c(f"\n  About to execute {len(queued)} action(s):\n", BOLD))
     for e in queued:
-        if e["action"] == "rename":
-            dst_name = e["new_name"]
-            print(f"    {c('RENAME',  YELLOW)}  {c(e['name'], WHITE)}  →  {c(dst_name, YELLOW)}")
+        if e["action"] in ("rename", "add"):
+            label = c("RENAME", YELLOW) if e["action"] == "rename" else c("ADD", GREEN)
+            print(f"    {label}    {c(e['name'], WHITE)}  →  {c(e['new_name'], YELLOW if e['action'] == 'rename' else GREEN)}")
         elif e["action"] == "moveup":
             dest = Path(e["new_name"])
-            print(f"    {c('MOVE UP', MAGENTA)}  {c(e['directory'] + '/' + e['name'], WHITE)}  →  {c(str(dest.parent.name) + '/', MAGENTA)}")
+            print(f"    {c('MOVE UP', MAGENTA)}  {c(e['directory'] + '/' + e['name'], WHITE)}  →  {c(dest.parent.name + '/', MAGENTA)}")
 
     print()
     confirm = input(c("  Proceed? [y/N] > ", CYAN)).strip().lower()
@@ -402,19 +498,18 @@ def cmd_execute(entries: list[dict], run_dir: Path):
     errors = []
     for e in queued:
         try:
-            if e["action"] == "rename":
+            if e["action"] in ("rename", "add"):
                 src = e["path"]
                 dst = src.parent / e["new_name"]
                 if dst.exists():
                     raise FileExistsError(f"Target already exists: {dst.name}")
                 src.rename(dst)
-                e["path"]     = dst
-                e["name"]     = dst.name
-                e["suggested"]= dst.name
-                # Update display directory (stays same)
+                e["path"]      = dst
+                e["name"]      = dst.name
+                e["suggested"] = dst.name
                 rel = str(dst.parent.relative_to(run_dir))
                 e["directory"] = "." if rel == "." else rel
-                print(c(f"  ✓ Renamed: {src.name}  →  {dst.name}", GREEN))
+                print(c(f"  ✓ {e['action'].capitalize()}: {src.name}  →  {dst.name}", GREEN))
 
             elif e["action"] == "moveup":
                 src  = e["path"]
@@ -422,7 +517,7 @@ def cmd_execute(entries: list[dict], run_dir: Path):
                 if dest.exists():
                     raise FileExistsError(f"Target already exists: {dest}")
                 src.rename(dest)
-                e["path"]     = dest
+                e["path"] = dest
                 rel = str(dest.parent.relative_to(run_dir))
                 e["directory"] = "." if rel == "." else rel
                 e["suggested"] = dest.name
@@ -450,6 +545,7 @@ def cmd_execute(entries: list[dict], run_dir: Path):
 COMMAND_ALIASES: dict[str, str] = {
     "rn":      "rn",
     "rename":  "rn",
+    "add":     "add",
     "mu":      "mu",
     "moveup":  "mu",
     "i":       "i",
@@ -513,6 +609,13 @@ def main():
             else:
                 cmd_rn(rest, entries)
 
+        elif command == "add":
+            if not rest:
+                print(c("[error] Usage: add <id|list|range>", RED))
+                input(c("  [Enter to continue]", DIM))
+            else:
+                cmd_add(rest, entries)
+
         elif command == "mu":
             if not rest:
                 print(c("[error] Usage: mu/moveup <id|list|range>", RED))
@@ -538,7 +641,7 @@ def main():
             cmd_execute(entries, run_dir)
 
         else:
-            print(c(f"[error] Unknown command '{raw_cmd}'. Try rn, mu, i, rm, exe, or q.", RED))
+            print(c(f"[error] Unknown command '{raw_cmd}'. Try rn, add, mu, i, rm, exe, or q.", RED))
             input(c("  [Enter to continue]", DIM))
 
     print(c("\n  Goodbye.\n", DIM))
