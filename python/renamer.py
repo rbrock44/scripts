@@ -16,27 +16,34 @@ from typing import Optional
 # ─────────────────────────────────────────────
 #  ANSI color helpers
 # ─────────────────────────────────────────────
-RESET  = "\033[0m"
-BOLD   = "\033[1m"
-DIM    = "\033[2m"
-RED    = "\033[31m"
-GREEN  = "\033[32m"
-YELLOW = "\033[33m"
-CYAN   = "\033[36m"
-WHITE  = "\033[97m"
-BG_DARK = "\033[48;5;235m"
+RESET   = "\033[0m"
+BOLD    = "\033[1m"
+DIM     = "\033[2m"
+RED     = "\033[31m"
+GREEN   = "\033[32m"
+YELLOW  = "\033[33m"
+CYAN    = "\033[36m"
+WHITE   = "\033[97m"
+MAGENTA = "\033[35m"
 
 def c(text, *codes):
     return "".join(codes) + str(text) + RESET
+
+def term_width() -> int:
+    try:
+        return os.get_terminal_size().columns
+    except OSError:
+        return 120
 
 
 # ─────────────────────────────────────────────
 #  Default config
 # ─────────────────────────────────────────────
 DEFAULT_CONFIG = {
-    "run_directory": ".",
-    "separator": "spaces",   # "spaces" or "periods"
-    "ignored_files": []
+    "run_directory":    ".",
+    "separator":        "spaces",   # "spaces" or "periods"
+    "ignored_files":    [],
+    "ignored_dirs":     [],         # directory names (relative) to skip during walk
 }
 
 DEFAULT_CONFIG_PATH = Path.home() / "renamer-settings.json"
@@ -50,7 +57,6 @@ def load_config(path: Path) -> dict:
         try:
             with open(path) as f:
                 data = json.load(f)
-            # Fill in missing keys from defaults
             for k, v in DEFAULT_CONFIG.items():
                 data.setdefault(k, v)
             return data
@@ -90,18 +96,26 @@ def suggest_name(filename: str, separator: str) -> str:
 #  Load files from run directory
 # ─────────────────────────────────────────────
 def load_files(cfg: dict) -> list[dict]:
-    """Return a sorted list of file-entry dicts, recursively, excluding ignored files."""
-    run_dir = Path(cfg["run_directory"]).expanduser().resolve()
-    ignored  = set(cfg.get("ignored_files", []))
+    """Recursively walk run_directory, skipping ignored dirs and files."""
+    run_dir      = Path(cfg["run_directory"]).expanduser().resolve()
+    ignored_files = set(cfg.get("ignored_files", []))
+    ignored_dirs  = set(cfg.get("ignored_dirs",  []))
 
     entries = []
     try:
-        for dirpath, _dirs, filenames in os.walk(run_dir):
+        for dirpath, dirs, filenames in os.walk(run_dir):
+            # Prune ignored directories in-place so os.walk won't descend
+            dirs[:] = [
+                d for d in dirs
+                if d not in ignored_dirs
+                and str(Path(dirpath, d).relative_to(run_dir)) not in ignored_dirs
+            ]
+
             for fname in sorted(filenames):
-                if fname in ignored:
+                if fname in ignored_files:
                     continue
                 p = Path(dirpath) / fname
-                rel_dir = str(Path(dirpath).relative_to(run_dir))
+                rel_dir     = str(Path(dirpath).relative_to(run_dir))
                 display_dir = "." if rel_dir == "." else rel_dir
                 entries.append({
                     "path":      p,
@@ -110,7 +124,9 @@ def load_files(cfg: dict) -> list[dict]:
                     "suggested": suggest_name(fname, cfg["separator"]),
                     "queued":    False,
                     "new_name":  None,
+                    "action":    None,  # "rename" | "moveup"
                 })
+
         entries.sort(key=lambda e: (e["directory"], e["name"]))
     except FileNotFoundError:
         print(c(f"[error] Directory not found: {run_dir}", RED))
@@ -118,55 +134,107 @@ def load_files(cfg: dict) -> list[dict]:
 
 
 # ─────────────────────────────────────────────
-#  Display
+#  Adaptive column layout
 # ─────────────────────────────────────────────
-HEADER_FMT = "{:<5} {:<35} {:<30} {:<30} {}"
+# Fixed widths that don't scale
+ID_W     = 5
+STATUS_W = 12   # "● RENAME" or "● MOVE UP"
+GAP      = 2    # spaces between every column
 
-def print_table(entries: list[dict], run_dir: str = "—", config_path: str = "—"):
-    os.system("clear")
-    print(c(f"\n  renamer", BOLD + CYAN) + c(f"  ·  dir: {run_dir}", DIM) + c(f"  ·  config: {config_path}\n", DIM))
-
-    # Column header
-    print(c(HEADER_FMT.format("ID", "DIRECTORY", "CURRENT NAME", "SUGGESTED NAME", "STATUS"), BOLD + DIM))
-    print(c("─" * 110, DIM))
-
-    for i, e in enumerate(entries, start=1):
-        idx   = c(f"{i:<5}", BOLD)
-        dname = c(f"{_trunc(e['directory'], 33):<35}", DIM)
-        cur   = f"{_trunc(e['name'], 28):<30}"
-        sug_raw  = e["new_name"] if e["new_name"] else e["suggested"]
-        sug   = f"{_trunc(sug_raw, 28):<30}"
-
-        if e["queued"]:
-            status = c("● QUEUED", YELLOW + BOLD)
-            cur    = c(cur, WHITE)
-            sug    = c(sug, YELLOW + BOLD)
-        else:
-            status = c("○", DIM)
-            cur    = c(cur, WHITE)
-            sug    = c(sug, DIM)
-
-        print(f"  {idx}{dname}{cur}{sug}{status}")
-
-    print(c("\n" + "─" * 110, DIM))
-    _print_commands()
+def _col_widths(total_width: int) -> tuple[int, int, int]:
+    """
+    Return (dir_w, name_w, suggested_w) that fill the available space.
+    Remaining space after ID and STATUS is split: 30% dir, 35% name, 35% suggested.
+    """
+    available = total_width - ID_W - STATUS_W - (GAP * 4)
+    available = max(available, 30)
+    dir_w  = max(10, int(available * 0.30))
+    name_w = max(10, int(available * 0.35))
+    sug_w  = max(10, available - dir_w - name_w)
+    return dir_w, name_w, sug_w
 
 
 def _trunc(s: str, n: int) -> str:
     return s if len(s) <= n else s[:n - 1] + "…"
 
+def _pad(s: str, n: int) -> str:
+    """Pad or truncate plain string to exactly n chars (no ANSI)."""
+    return _trunc(s, n).ljust(n)
+
+
+# ─────────────────────────────────────────────
+#  Display
+# ─────────────────────────────────────────────
+def print_table(entries: list[dict], run_dir: str = "—", config_path: str = "—"):
+    os.system("clear")
+    tw = term_width()
+
+    print(c("\n  renamer", BOLD + CYAN)
+          + c(f"  ·  dir: {run_dir}", DIM)
+          + c(f"  ·  config: {config_path}\n", DIM))
+
+    dir_w, name_w, sug_w = _col_widths(tw)
+
+    # Header
+    header = (
+        f"{'ID':<{ID_W}}"
+        f"{'DIRECTORY':<{dir_w + GAP}}"
+        f"{'CURRENT NAME':<{name_w + GAP}}"
+        f"{'SUGGESTED NAME':<{sug_w + GAP}}"
+        f"STATUS"
+    )
+    print(c(f"  {header}", BOLD + DIM))
+    print(c("  " + "─" * (tw - 4), DIM))
+
+    for i, e in enumerate(entries, start=1):
+        idx  = f"{i:<{ID_W}}"
+        ddir = _pad(e["directory"], dir_w)
+        cur  = _pad(e["name"], name_w)
+        sug_raw = e["new_name"] if e["new_name"] else e["suggested"]
+        sug  = _pad(sug_raw, sug_w)
+
+        sp = " " * GAP
+
+        if e["queued"] and e["action"] == "moveup":
+            status = c("● MOVE UP", MAGENTA + BOLD)
+            row = (c(idx, BOLD)
+                   + c(ddir + sp, DIM)
+                   + c(cur  + sp, WHITE)
+                   + c(sug  + sp, MAGENTA + BOLD)
+                   + status)
+        elif e["queued"] and e["action"] == "rename":
+            status = c("● RENAME", YELLOW + BOLD)
+            row = (c(idx, BOLD)
+                   + c(ddir + sp, DIM)
+                   + c(cur  + sp, WHITE)
+                   + c(sug  + sp, YELLOW + BOLD)
+                   + status)
+        else:
+            status = c("○", DIM)
+            row = (c(idx, BOLD)
+                   + c(ddir + sp, DIM)
+                   + c(cur  + sp, WHITE)
+                   + c(sug  + sp, DIM)
+                   + status)
+
+        print(f"  {row}")
+
+    print(c("\n  " + "─" * (tw - 4), DIM))
+    _print_commands()
+
 
 def _print_commands():
     cmds = [
-        ("rn / rename <id>",          "Queue file for rename (opens suggested name to edit)"),
-        ("i  / ignore <id|list|range>","Ignore file(s) — persists to config"),
-        ("rm / remove <id|list|range>","Remove file(s) from rename queue"),
-        ("exe / execute",             "Execute all queued renames"),
-        ("q  / quit / exit",          "Quit"),
+        ("rn / rename <id>",           "Queue file for rename (opens suggested name to edit)"),
+        ("mu / moveup <id|list|range>", "Move file(s) up one directory"),
+        ("i  / ignore <id|list|range>", "Ignore file(s) — persists to config"),
+        ("rm / remove <id|list|range>", "Remove file(s) from queue"),
+        ("exe / execute",              "Execute all queued actions"),
+        ("q  / quit / exit",           "Quit"),
     ]
     print(c("  COMMANDS\n", BOLD))
     for cmd, desc in cmds:
-        print(f"  {c(f'{cmd:<22}', CYAN + BOLD)}{c(desc, DIM)}")
+        print(f"  {c(f'{cmd:<30}', CYAN + BOLD)}{c(desc, DIM)}")
     print()
 
 
@@ -176,23 +244,20 @@ def _print_commands():
 def parse_ids(token: str, max_id: int) -> list[int]:
     """Parse '3', '1,3,5', or '2..6' into a list of 0-based indices."""
     token = token.strip()
-    indices = []
 
-    # Range: 1..5
     range_match = re.fullmatch(r"(\d+)\.\.(\d+)", token)
     if range_match:
         lo, hi = int(range_match.group(1)), int(range_match.group(2))
         indices = list(range(lo, hi + 1))
     else:
-        # Comma-separated or single
         parts = [p.strip() for p in token.split(",")]
+        indices = []
         for p in parts:
             if p.isdigit():
                 indices.append(int(p))
             else:
                 raise ValueError(f"Invalid id: '{p}'")
 
-    # Convert to 0-based and validate
     result = []
     for n in indices:
         if 1 <= n <= max_id:
@@ -209,6 +274,7 @@ def cmd_rn(args: str, entries: list[dict]):
     """Queue a file for rename, letting the user edit the suggested name."""
     if not args.strip().isdigit():
         print(c("[error] rn expects a single numeric ID.", RED))
+        input(c("  [Enter to continue]", DIM))
         return
 
     idx_list = parse_ids(args.strip(), len(entries))
@@ -229,7 +295,43 @@ def cmd_rn(args: str, entries: list[dict]):
     final_name = user_input if user_input else current_suggestion
     e["new_name"] = final_name
     e["queued"]   = True
-    print(c(f"  ✓ Queued: {e['name']}  →  {final_name}", GREEN))
+    e["action"]   = "rename"
+    print(c(f"  ✓ Queued rename: {e['name']}  →  {final_name}", GREEN))
+    input(c("  [Enter to continue]", DIM))
+
+
+def cmd_moveup(args: str, entries: list[dict], run_dir: Path):
+    """Queue file(s) to be moved up one directory."""
+    try:
+        indices = parse_ids(args, len(entries))
+    except ValueError as exc:
+        print(c(f"[error] {exc}", RED))
+        input(c("  [Enter to continue]", DIM))
+        return
+
+    for idx in indices:
+        e = entries[idx]
+        current_path = e["path"]
+        parent       = current_path.parent
+        grandparent  = parent.parent
+
+        # Safety: don't move above the run_directory
+        try:
+            grandparent.relative_to(run_dir)
+            above_root = False
+        except ValueError:
+            above_root = grandparent == run_dir.parent or not str(grandparent).startswith(str(run_dir))
+
+        if parent == run_dir:
+            print(c(f"  [skip] {e['name']} is already at the root of the run directory.", YELLOW))
+            continue
+
+        dest = grandparent / e["name"]
+        e["queued"]   = True
+        e["action"]   = "moveup"
+        e["new_name"] = str(dest)   # store full destination path for execute
+        print(c(f"  ✓ Queued move up: {e['directory']}/{e['name']}  →  {grandparent.name}/", MAGENTA))
+
     input(c("  [Enter to continue]", DIM))
 
 
@@ -255,7 +357,7 @@ def cmd_ignore(args: str, entries: list[dict], cfg: dict, config_path: Path):
 
 
 def cmd_rm(args: str, entries: list[dict]):
-    """Remove file(s) from the rename queue (does not ignore)."""
+    """Remove file(s) from the queue (does not ignore)."""
     try:
         indices = parse_ids(args, len(entries))
     except ValueError as exc:
@@ -267,24 +369,28 @@ def cmd_rm(args: str, entries: list[dict]):
         e = entries[idx]
         e["queued"]   = False
         e["new_name"] = None
+        e["action"]   = None
         print(c(f"  Dequeued: {e['name']}", DIM))
 
     input(c("  [Enter to continue]", DIM))
 
 
-def cmd_execute(entries: list[dict]):
-    """Rename all queued files."""
+def cmd_execute(entries: list[dict], run_dir: Path):
+    """Execute all queued rename and move-up actions."""
     queued = [e for e in entries if e["queued"]]
     if not queued:
-        print(c("  No files queued.", YELLOW))
+        print(c("  No actions queued.", YELLOW))
         input(c("  [Enter to continue]", DIM))
         return
 
-    print(c(f"\n  About to rename {len(queued)} file(s):\n", BOLD))
+    print(c(f"\n  About to execute {len(queued)} action(s):\n", BOLD))
     for e in queued:
-        src = e["path"]
-        dst = src.parent / e["new_name"]
-        print(f"    {c(e['name'], WHITE)}  →  {c(e['new_name'], GREEN)}")
+        if e["action"] == "rename":
+            dst_name = e["new_name"]
+            print(f"    {c('RENAME',  YELLOW)}  {c(e['name'], WHITE)}  →  {c(dst_name, YELLOW)}")
+        elif e["action"] == "moveup":
+            dest = Path(e["new_name"])
+            print(f"    {c('MOVE UP', MAGENTA)}  {c(e['directory'] + '/' + e['name'], WHITE)}  →  {c(str(dest.parent.name) + '/', MAGENTA)}")
 
     print()
     confirm = input(c("  Proceed? [y/N] > ", CYAN)).strip().lower()
@@ -295,17 +401,37 @@ def cmd_execute(entries: list[dict]):
 
     errors = []
     for e in queued:
-        src = e["path"]
-        dst = src.parent / e["new_name"]
         try:
-            if dst.exists():
-                raise FileExistsError(f"Target already exists: {dst.name}")
-            src.rename(dst)
-            e["path"]     = dst
-            e["name"]     = dst.name
+            if e["action"] == "rename":
+                src = e["path"]
+                dst = src.parent / e["new_name"]
+                if dst.exists():
+                    raise FileExistsError(f"Target already exists: {dst.name}")
+                src.rename(dst)
+                e["path"]     = dst
+                e["name"]     = dst.name
+                e["suggested"]= dst.name
+                # Update display directory (stays same)
+                rel = str(dst.parent.relative_to(run_dir))
+                e["directory"] = "." if rel == "." else rel
+                print(c(f"  ✓ Renamed: {src.name}  →  {dst.name}", GREEN))
+
+            elif e["action"] == "moveup":
+                src  = e["path"]
+                dest = Path(e["new_name"])
+                if dest.exists():
+                    raise FileExistsError(f"Target already exists: {dest}")
+                src.rename(dest)
+                e["path"]     = dest
+                rel = str(dest.parent.relative_to(run_dir))
+                e["directory"] = "." if rel == "." else rel
+                e["suggested"] = dest.name
+                print(c(f"  ✓ Moved up: {src.name}  →  {dest.parent.name}/", GREEN))
+
             e["queued"]   = False
             e["new_name"] = None
-            print(c(f"  ✓ {src.name}  →  {dst.name}", GREEN))
+            e["action"]   = None
+
         except Exception as exc:
             errors.append((e["name"], str(exc)))
             print(c(f"  ✗ {e['name']}: {exc}", RED))
@@ -313,7 +439,7 @@ def cmd_execute(entries: list[dict]):
     if errors:
         print(c(f"\n  {len(errors)} error(s) occurred.", RED))
     else:
-        print(c("\n  All renames completed successfully.", GREEN + BOLD))
+        print(c("\n  All actions completed successfully.", GREEN + BOLD))
 
     input(c("  [Enter to continue]", DIM))
 
@@ -322,17 +448,19 @@ def cmd_execute(entries: list[dict]):
 #  Command alias map
 # ─────────────────────────────────────────────
 COMMAND_ALIASES: dict[str, str] = {
-    "rn":     "rn",
-    "rename": "rn",
-    "i":      "i",
-    "ignore": "i",
-    "rm":     "rm",
-    "remove": "rm",
-    "exe":    "exe",
-    "execute":"exe",
-    "q":      "q",
-    "quit":   "q",
-    "exit":   "q",
+    "rn":      "rn",
+    "rename":  "rn",
+    "mu":      "mu",
+    "moveup":  "mu",
+    "i":       "i",
+    "ignore":  "i",
+    "rm":      "rm",
+    "remove":  "rm",
+    "exe":     "exe",
+    "execute": "exe",
+    "q":       "q",
+    "quit":    "q",
+    "exit":    "q",
 }
 
 
@@ -346,19 +474,20 @@ def main():
     args = parser.parse_args()
 
     config_path: Path = args.config.expanduser().resolve()
-    cfg   = load_config(config_path)
-    run_dir = str(Path(cfg["run_directory"]).expanduser().resolve())
+    cfg     = load_config(config_path)
+    run_dir = Path(cfg["run_directory"]).expanduser().resolve()
     entries = load_files(cfg)
 
-    # ── startup banner (shown once, before first clear) ──────────────
+    # ── startup banner ────────────────────────
     print(c("\n  renamer", BOLD + CYAN))
-    print(c(f"  config : {config_path}", DIM))
-    print(c(f"  dir    : {run_dir}", DIM))
-    print(c(f"  files  : {len(entries)} found\n", DIM))
+    print(c(f"  config       : {config_path}", DIM))
+    print(c(f"  dir          : {run_dir}", DIM))
+    print(c(f"  ignored dirs : {', '.join(cfg['ignored_dirs']) or '(none)'}", DIM))
+    print(c(f"  files found  : {len(entries)}\n", DIM))
     input(c("  [Enter to continue]", DIM))
 
     while True:
-        print_table(entries, run_dir=run_dir, config_path=str(config_path))
+        print_table(entries, run_dir=str(run_dir), config_path=str(config_path))
 
         try:
             raw = input(c("  > ", BOLD + CYAN)).strip()
@@ -384,6 +513,13 @@ def main():
             else:
                 cmd_rn(rest, entries)
 
+        elif command == "mu":
+            if not rest:
+                print(c("[error] Usage: mu/moveup <id|list|range>", RED))
+                input(c("  [Enter to continue]", DIM))
+            else:
+                cmd_moveup(rest, entries, run_dir)
+
         elif command == "i":
             if not rest:
                 print(c("[error] Usage: i/ignore <id|list|range>", RED))
@@ -399,10 +535,10 @@ def main():
                 cmd_rm(rest, entries)
 
         elif command == "exe":
-            cmd_execute(entries)
+            cmd_execute(entries, run_dir)
 
         else:
-            print(c(f"[error] Unknown command '{raw_cmd}'. Try rn/rename, i/ignore, rm/remove, exe/execute, or q/quit.", RED))
+            print(c(f"[error] Unknown command '{raw_cmd}'. Try rn, mu, i, rm, exe, or q.", RED))
             input(c("  [Enter to continue]", DIM))
 
     print(c("\n  Goodbye.\n", DIM))
