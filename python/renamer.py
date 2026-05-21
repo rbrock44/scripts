@@ -90,22 +90,28 @@ def suggest_name(filename: str, separator: str) -> str:
 #  Load files from run directory
 # ─────────────────────────────────────────────
 def load_files(cfg: dict) -> list[dict]:
-    """Return a sorted list of file-entry dicts, excluding ignored files."""
+    """Return a sorted list of file-entry dicts, recursively, excluding ignored files."""
     run_dir = Path(cfg["run_directory"]).expanduser().resolve()
     ignored  = set(cfg.get("ignored_files", []))
 
     entries = []
     try:
-        for p in sorted(run_dir.iterdir()):
-            if p.is_file() and p.name not in ignored:
+        for dirpath, _dirs, filenames in os.walk(run_dir):
+            for fname in sorted(filenames):
+                if fname in ignored:
+                    continue
+                p = Path(dirpath) / fname
+                rel_dir = str(Path(dirpath).relative_to(run_dir))
+                display_dir = "." if rel_dir == "." else rel_dir
                 entries.append({
                     "path":      p,
-                    "directory": str(p.parent),
-                    "name":      p.name,
-                    "suggested": suggest_name(p.name, cfg["separator"]),
+                    "directory": display_dir,
+                    "name":      fname,
+                    "suggested": suggest_name(fname, cfg["separator"]),
                     "queued":    False,
-                    "new_name":  None,   # set when user edits the suggested name
+                    "new_name":  None,
                 })
+        entries.sort(key=lambda e: (e["directory"], e["name"]))
     except FileNotFoundError:
         print(c(f"[error] Directory not found: {run_dir}", RED))
     return entries
@@ -116,10 +122,9 @@ def load_files(cfg: dict) -> list[dict]:
 # ─────────────────────────────────────────────
 HEADER_FMT = "{:<5} {:<35} {:<30} {:<30} {}"
 
-def print_table(entries: list[dict]):
+def print_table(entries: list[dict], run_dir: str = "—", config_path: str = "—"):
     os.system("clear")
-    run_dir = entries[0]["directory"] if entries else "—"
-    print(c(f"\n  renamer  ·  {run_dir}\n", BOLD + CYAN))
+    print(c(f"\n  renamer", BOLD + CYAN) + c(f"  ·  dir: {run_dir}", DIM) + c(f"  ·  config: {config_path}\n", DIM))
 
     # Column header
     print(c(HEADER_FMT.format("ID", "DIRECTORY", "CURRENT NAME", "SUGGESTED NAME", "STATUS"), BOLD + DIM))
@@ -340,12 +345,20 @@ def main():
                         help="Path to JSON config file")
     args = parser.parse_args()
 
-    config_path: Path = args.config
+    config_path: Path = args.config.expanduser().resolve()
     cfg   = load_config(config_path)
+    run_dir = str(Path(cfg["run_directory"]).expanduser().resolve())
     entries = load_files(cfg)
 
+    # ── startup banner (shown once, before first clear) ──────────────
+    print(c("\n  renamer", BOLD + CYAN))
+    print(c(f"  config : {config_path}", DIM))
+    print(c(f"  dir    : {run_dir}", DIM))
+    print(c(f"  files  : {len(entries)} found\n", DIM))
+    input(c("  [Enter to continue]", DIM))
+
     while True:
-        print_table(entries)
+        print_table(entries, run_dir=run_dir, config_path=str(config_path))
 
         try:
             raw = input(c("  > ", BOLD + CYAN)).strip()
