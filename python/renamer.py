@@ -95,7 +95,7 @@ def _normalize_title_token(token: str) -> str:
 def _normalize_suffix_token(token: str) -> str:
     if MEDIA_SEASON_RE.fullmatch(token):
         return token.upper()
-    return token.upper()
+    return token
 
 
 def _split_name_extension(name: str) -> tuple[str, str]:
