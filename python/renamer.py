@@ -92,6 +92,15 @@ def suggest_name(filename: str, separator: str) -> str:
     return filename
 
 
+def suggest_dir_name(dirname: str, separator: str) -> str:
+    """
+    TODO: Implement intelligent directory suggestion logic.
+
+    For now: return the original directory name unchanged.
+    """
+    return dirname
+
+
 # ─────────────────────────────────────────────
 #  Load files from run directory
 # ─────────────────────────────────────────────
@@ -129,6 +138,43 @@ def load_files(cfg: dict) -> list[dict]:
         entries.sort(key=lambda e: (e["directory"], e["name"]))
     except FileNotFoundError:
         print(c(f"[error] Directory not found: {run_dir}", RED))
+    return entries
+
+
+def load_directories(cfg: dict) -> list[dict]:
+    """Recursively walk run_directory and return directories for rename actions."""
+    run_dir      = Path(cfg["run_directory"]).expanduser().resolve()
+    ignored_dirs = set(cfg.get("ignored_dirs", []))
+
+    entries = []
+    try:
+        for dirpath, dirs, _ in os.walk(run_dir):
+            dirs[:] = [
+                d for d in dirs
+                if d not in ignored_dirs
+                and str(Path(dirpath, d).relative_to(run_dir)) not in ignored_dirs
+            ]
+
+            for dname in sorted(dirs):
+                p = Path(dirpath) / dname
+                rel_parent  = str(Path(dirpath).relative_to(run_dir))
+                display_dir = "." if rel_parent == "." else rel_parent
+                rel_path    = str(p.relative_to(run_dir))
+                entries.append({
+                    "path":      p,
+                    "relative":  rel_path,
+                    "directory": display_dir,
+                    "name":      dname,
+                    "suggested": suggest_dir_name(dname, cfg["separator"]),
+                    "queued":    False,
+                    "new_name":  None,
+                    "action":    None,  # "rename" | "add"
+                })
+
+        entries.sort(key=lambda e: (e["directory"], e["name"]))
+    except FileNotFoundError:
+        print(c(f"[error] Directory not found: {run_dir}", RED))
+
     return entries
 
 
@@ -237,11 +283,19 @@ def _render_row(
 # ─────────────────────────────────────────────
 #  Display
 # ─────────────────────────────────────────────
-def print_table(entries: list[dict], run_dir: str = "—", config_path: str = "—"):
+def print_table(
+    entries: list[dict],
+    run_dir: str = "—",
+    config_path: str = "—",
+    mode: str = "files",
+):
     os.system("clear")
     tw = term_width()
 
+    mode_label = "rename files" if mode == "files" else "rename directories"
+
     print(c("\n  renamer", BOLD + CYAN)
+          + c(f"  ·  mode: {mode_label}", DIM)
           + c(f"  ·  dir: {run_dir}", DIM)
           + c(f"  ·  config: {config_path}\n", DIM))
 
@@ -303,19 +357,32 @@ def print_table(entries: list[dict], run_dir: str = "—", config_path: str = "�
         ))
 
     print(c("\n  " + "─" * (tw - 4), DIM))
-    _print_commands()
+    _print_commands(mode)
 
 
-def _print_commands():
-    cmds = [
-        ("rn / rename <id>",            "Queue a file for rename — opens suggested name to edit"),
-        ("add <id|list|range>",         "Queue file(s) using the suggested name as-is"),
-        ("mu / moveup <id|list|range>",  "Move file(s) up one directory"),
-        ("i  / ignore <id|list|range>",  "Ignore file(s) — persists to config"),
-        ("rm / remove <id|list|range>",  "Remove file(s) from queue"),
-        ("exe / execute",               "Execute all queued actions"),
-        ("q  / quit / exit",            "Quit"),
-    ]
+def _print_commands(mode: str):
+    if mode == "files":
+        cmds = [
+            ("rd",                          "Switch to directory rename screen"),
+            ("rn / rename <id>",            "Queue a file for rename — opens suggested name to edit"),
+            ("add <id|list|range>",         "Queue file(s) using the suggested name as-is"),
+            ("mu / moveup <id|list|range>", "Move file(s) up one directory"),
+            ("i  / ignore <id|list|range>", "Ignore file(s) — persists to config"),
+            ("rm / remove <id|list|range>", "Remove file(s) from queue"),
+            ("exe / execute",               "Execute all queued actions"),
+            ("q  / quit / exit",            "Quit"),
+        ]
+    else:
+        cmds = [
+            ("rf",                          "Switch back to file rename screen"),
+            ("rn / rename <id>",            "Queue a directory for rename — opens suggested name to edit"),
+            ("add <id|list|range>",         "Queue directory rename(s) using suggested name"),
+            ("i  / ignore <id|list|range>", "Ignore director(ies) — persists to config"),
+            ("rm / remove <id|list|range>", "Remove directory rename(s) from queue"),
+            ("exe / execute",               "Execute all queued directory rename actions"),
+            ("q  / quit / exit",            "Quit"),
+        ]
+
     print(c("  COMMANDS\n", BOLD))
     for cmd, desc in cmds:
         print(f"  {c(f'{cmd:<32}', CYAN + BOLD)}{c(desc, DIM)}")
@@ -431,8 +498,15 @@ def cmd_moveup(args: str, entries: list[dict], run_dir: Path):
     input(c("  [Enter to continue]", DIM))
 
 
-def cmd_ignore(args: str, entries: list[dict], cfg: dict, config_path: Path):
-    """Add file(s) to the ignore list and remove from current entries."""
+def cmd_ignore(
+    args: str,
+    entries: list[dict],
+    cfg: dict,
+    config_path: Path,
+    ignore_key: str,
+    ignore_value_key: str,
+):
+    """Add item(s) to an ignore list and remove from current entries."""
     try:
         indices = parse_ids(args, len(entries))
     except ValueError as exc:
@@ -440,12 +514,12 @@ def cmd_ignore(args: str, entries: list[dict], cfg: dict, config_path: Path):
         input(c("  [Enter to continue]", DIM))
         return
 
-    ignored = cfg.setdefault("ignored_files", [])
+    ignored = cfg.setdefault(ignore_key, [])
     for idx in sorted(indices, reverse=True):
-        name = entries[idx]["name"]
-        if name not in ignored:
-            ignored.append(name)
-            print(c(f"  Ignored: {name}", YELLOW))
+        value = entries[idx][ignore_value_key]
+        if value not in ignored:
+            ignored.append(value)
+            print(c(f"  Ignored: {value}", YELLOW))
         entries.pop(idx)
 
     save_config(cfg, config_path)
@@ -471,13 +545,17 @@ def cmd_rm(args: str, entries: list[dict]):
     input(c("  [Enter to continue]", DIM))
 
 
-def cmd_execute(entries: list[dict], run_dir: Path):
-    """Execute all queued rename, add, and move-up actions."""
+def cmd_execute(entries: list[dict], run_dir: Path, entry_kind: str = "files") -> bool:
+    """Execute all queued actions for files or directories."""
     queued = [e for e in entries if e["queued"]]
     if not queued:
         print(c("  No actions queued.", YELLOW))
         input(c("  [Enter to continue]", DIM))
-        return
+        return False
+
+    if entry_kind == "directories":
+        # Rename deepest directories first to avoid breaking child paths.
+        queued = sorted(queued, key=lambda e: len(Path(e["relative"]).parts), reverse=True)
 
     print(c(f"\n  About to execute {len(queued)} action(s):\n", BOLD))
     for e in queued:
@@ -493,7 +571,7 @@ def cmd_execute(entries: list[dict], run_dir: Path):
     if confirm != "y":
         print(c("  Aborted.", RED))
         input(c("  [Enter to continue]", DIM))
-        return
+        return False
 
     errors = []
     for e in queued:
@@ -537,12 +615,15 @@ def cmd_execute(entries: list[dict], run_dir: Path):
         print(c("\n  All actions completed successfully.", GREEN + BOLD))
 
     input(c("  [Enter to continue]", DIM))
+    return True
 
 
 # ─────────────────────────────────────────────
 #  Command alias map
 # ─────────────────────────────────────────────
 COMMAND_ALIASES: dict[str, str] = {
+    "rf":      "rf",
+    "rd":      "rd",
     "rn":      "rn",
     "rename":  "rn",
     "add":     "add",
@@ -572,18 +653,22 @@ def main():
     config_path: Path = args.config.expanduser().resolve()
     cfg     = load_config(config_path)
     run_dir = Path(cfg["run_directory"]).expanduser().resolve()
-    entries = load_files(cfg)
+    file_entries = load_files(cfg)
+    dir_entries  = load_directories(cfg)
+    mode         = "files"
 
     # ── startup banner ────────────────────────
     print(c("\n  renamer", BOLD + CYAN))
     print(c(f"  config       : {config_path}", DIM))
     print(c(f"  dir          : {run_dir}", DIM))
     print(c(f"  ignored dirs : {', '.join(cfg['ignored_dirs']) or '(none)'}", DIM))
-    print(c(f"  files found  : {len(entries)}\n", DIM))
+    print(c(f"  files found  : {len(file_entries)}", DIM))
+    print(c(f"  dirs found   : {len(dir_entries)}\n", DIM))
     input(c("  [Enter to continue]", DIM))
 
     while True:
-        print_table(entries, run_dir=str(run_dir), config_path=str(config_path))
+        entries = file_entries if mode == "files" else dir_entries
+        print_table(entries, run_dir=str(run_dir), config_path=str(config_path), mode=mode)
 
         try:
             raw = input(c("  > ", BOLD + CYAN)).strip()
@@ -602,6 +687,12 @@ def main():
         if command == "q":
             break
 
+        elif command == "rd":
+            mode = "directories"
+
+        elif command == "rf":
+            mode = "files"
+
         elif command == "rn":
             if not rest:
                 print(c("[error] Usage: rn/rename <id>", RED))
@@ -617,7 +708,10 @@ def main():
                 cmd_add(rest, entries)
 
         elif command == "mu":
-            if not rest:
+            if mode != "files":
+                print(c("[error] moveup is only available in file mode. Use rf first.", RED))
+                input(c("  [Enter to continue]", DIM))
+            elif not rest:
                 print(c("[error] Usage: mu/moveup <id|list|range>", RED))
                 input(c("  [Enter to continue]", DIM))
             else:
@@ -628,7 +722,10 @@ def main():
                 print(c("[error] Usage: i/ignore <id|list|range>", RED))
                 input(c("  [Enter to continue]", DIM))
             else:
-                cmd_ignore(rest, entries, cfg, config_path)
+                if mode == "files":
+                    cmd_ignore(rest, entries, cfg, config_path, "ignored_files", "name")
+                else:
+                    cmd_ignore(rest, entries, cfg, config_path, "ignored_dirs", "relative")
 
         elif command == "rm":
             if not rest:
@@ -638,10 +735,16 @@ def main():
                 cmd_rm(rest, entries)
 
         elif command == "exe":
-            cmd_execute(entries, run_dir)
+            if mode == "files":
+                if cmd_execute(entries, run_dir, entry_kind="files"):
+                    file_entries = load_files(cfg)
+            else:
+                if cmd_execute(entries, run_dir, entry_kind="directories"):
+                    dir_entries  = load_directories(cfg)
+                    file_entries = load_files(cfg)
 
         else:
-            print(c(f"[error] Unknown command '{raw_cmd}'. Try rn, add, mu, i, rm, exe, or q.", RED))
+            print(c(f"[error] Unknown command '{raw_cmd}'. Try rf/rd, rn, add, mu, i, rm, exe, or q.", RED))
             input(c("  [Enter to continue]", DIM))
 
     print(c("\n  Goodbye.\n", DIM))
