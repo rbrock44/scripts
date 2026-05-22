@@ -365,7 +365,7 @@ def _print_commands(mode: str):
         cmds = [
             ("rd",                          "Switch to directory rename screen"),
             ("rn / rename <id>",            "Queue a file for rename — opens suggested name to edit"),
-            ("add <id|list|range>",         "Queue file(s) using the suggested name as-is"),
+            ("a / add <id|list|range>",     "Queue file(s) using the suggested name as-is"),
             ("mu / moveup <id|list|range>", "Move file(s) up one directory"),
             ("i  / ignore <id|list|range>", "Ignore file(s) — persists to config"),
             ("rm / remove <id|list|range>", "Remove file(s) from queue"),
@@ -376,7 +376,7 @@ def _print_commands(mode: str):
         cmds = [
             ("rf",                          "Switch back to file rename screen"),
             ("rn / rename <id>",            "Queue a directory for rename — opens suggested name to edit"),
-            ("add <id|list|range>",         "Queue directory rename(s) using suggested name"),
+            ("a / add <id|list|range>",     "Queue directory rename(s) using suggested name"),
             ("i  / ignore <id|list|range>", "Ignore director(ies) — persists to config"),
             ("rm / remove <id|list|range>", "Remove directory rename(s) from queue"),
             ("exe / execute",               "Execute all queued directory rename actions"),
@@ -386,6 +386,10 @@ def _print_commands(mode: str):
     print(c("  COMMANDS\n", BOLD))
     for cmd, desc in cmds:
         print(f"  {c(f'{cmd:<32}', CYAN + BOLD)}{c(desc, DIM)}")
+    print(c("\n  ARGUMENT HELP", BOLD))
+    print(f"  {c('id', CYAN + BOLD):<32}{c('Single item number. Example: 7', DIM)}")
+    print(f"  {c('list', CYAN + BOLD):<32}{c('Comma-separated IDs. Example: 1,4,9', DIM)}")
+    print(f"  {c('range', CYAN + BOLD):<32}{c('Inclusive range with .. Example: 3..6', DIM)}")
     print()
 
 
@@ -624,6 +628,7 @@ def cmd_execute(entries: list[dict], run_dir: Path, entry_kind: str = "files") -
 COMMAND_ALIASES: dict[str, str] = {
     "rf":      "rf",
     "rd":      "rd",
+    "a":       "add",
     "rn":      "rn",
     "rename":  "rn",
     "add":     "add",
