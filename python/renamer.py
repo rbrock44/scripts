@@ -10,6 +10,7 @@ import json
 import re
 import shutil
 import argparse
+from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
@@ -73,32 +74,156 @@ def save_config(cfg: dict, path: Path):
 # ─────────────────────────────────────────────
 #  Suggested-name logic  (TODO)
 # ─────────────────────────────────────────────
-def suggest_name(filename: str, separator: str) -> str:
-    """
-    TODO: Implement intelligent name suggestion logic.
+MEDIA_QUALITY_RE = re.compile(r"(?i)\b(2160p|1080p|720p|480p)\b")
+MEDIA_YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
+MEDIA_SEASON_RE = re.compile(r"(?i)^s\d{1,2}(?:e\d{1,2})?$")
 
-    Ideas to implement:
-      - Normalize separators (replace underscores/dots/dashes with the
-        configured separator — spaces or periods)
-      - Strip redundant tokens (e.g. "copy", "final", version numbers)
-      - Title-case words for human-readable names
-      - Date-pattern detection and reformatting (YYYYMMDD → YYYY-MM-DD)
-      - Detect camera-roll patterns (IMG_1234, DSC_5678) and propose
-        descriptive names based on EXIF metadata if available
-      - Strip illegal filesystem characters
 
-    For now: return the original filename unchanged.
-    """
-    return filename
+def _split_media_tokens(text: str) -> list[str]:
+    normalized = re.sub(r"[._]+", " ", text)
+    normalized = re.sub(r"[\[\](){}]", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized.split() if normalized else []
+
+
+def _normalize_title_token(token: str) -> str:
+    if token.isupper() and len(token) <= 4:
+        return token
+    return token.title()
+
+
+def _normalize_suffix_token(token: str) -> str:
+    if MEDIA_SEASON_RE.fullmatch(token):
+        return token.upper()
+    return token.upper()
+
+
+def _split_name_extension(name: str) -> tuple[str, str]:
+    stem, ext = os.path.splitext(name)
+    return stem, ext
+
+
+def _separator_delimiter(separator: str) -> str:
+    return "." if separator == "periods" else " "
+
+
+def _apply_separator(stem: str, separator: str) -> str:
+    delimiter = _separator_delimiter(separator)
+    parts = stem.split()
+    return delimiter.join(parts) if parts else stem
+
+
+def _suggest_media_stem(raw_name: str) -> str:
+    quality_match = MEDIA_QUALITY_RE.search(raw_name)
+    quality = quality_match.group(1).lower() if quality_match else None
+
+    tokens = _split_media_tokens(raw_name)
+    if not tokens:
+        return raw_name.strip()
+
+    quality_idx = next(
+        (idx for idx, token in enumerate(tokens) if MEDIA_QUALITY_RE.fullmatch(token)),
+        len(tokens),
+    )
+    relevant_tokens = tokens[:quality_idx]
+    if not relevant_tokens:
+        relevant_tokens = tokens
+
+    title_tokens: list[str] = []
+    suffix_tokens: list[str] = []
+    year = None
+    anchor_seen = False
+
+    for token in relevant_tokens:
+        if year is None and MEDIA_YEAR_RE.fullmatch(token):
+            year = token
+            anchor_seen = True
+            continue
+
+        if title_tokens and MEDIA_SEASON_RE.fullmatch(token):
+            suffix_tokens.append(token.upper())
+            anchor_seen = True
+            continue
+
+        if anchor_seen:
+            suffix_tokens.append(_normalize_suffix_token(token))
+        else:
+            title_tokens.append(_normalize_title_token(token))
+
+    if not title_tokens and year:
+        title_tokens.append(year)
+        year = None
+
+    stem = " ".join(title_tokens).strip()
+    if year:
+        stem = f"{stem} ({year})".strip()
+    if suffix_tokens:
+        stem = f"{stem} {' '.join(suffix_tokens)}".strip()
+    if quality:
+        stem = f"{stem} [{quality}]".strip()
+
+    return stem or raw_name.strip()
+
+
+def _dedupe_filename(directory: Path, original_name: str, suggested_name: str, separator: str) -> str:
+    if suggested_name == original_name:
+        return suggested_name
+
+    target = directory / suggested_name
+    if not target.exists():
+        return suggested_name
+
+    stem, suffix = _split_name_extension(suggested_name)
+    counter = 2
+    delimiter = _separator_delimiter(separator)
+
+    while True:
+        candidate = f"{stem}{delimiter}{counter}{suffix}"
+        if candidate == original_name or not (directory / candidate).exists():
+            return candidate
+        counter += 1
+
+
+def _dedupe_entry_suggestions(entries: list[dict], separator: str):
+    grouped: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for entry in entries:
+        grouped[(entry["directory"], entry["suggested"])].append(entry)
+
+    for group in grouped.values():
+        if len(group) <= 1:
+            continue
+
+        group.sort(key=lambda entry: (entry["name"] != entry["suggested"], entry["name"].lower()))
+        base_name = group[0]["suggested"]
+        stem, suffix = _split_name_extension(base_name)
+        delimiter = _separator_delimiter(separator)
+
+        for index, entry in enumerate(group[1:], start=2):
+            entry["suggested"] = f"{stem}{delimiter}{index}{suffix}"
+
+
+def suggest_name(
+    filename: str,
+    separator: str,
+    *,
+    parent_dir_name: Optional[str] = None,
+    parent_dir_path: Optional[Path] = None,
+) -> str:
+    stem, ext = _split_name_extension(filename)
+
+    if ext.lower() == ".srt" and parent_dir_name:
+        suggested_stem = suggest_dir_name(parent_dir_name, separator)
+    else:
+        suggested_stem = _apply_separator(_suggest_media_stem(stem), separator)
+
+    suggested_name = f"{suggested_stem}{ext}"
+    if parent_dir_path is not None:
+        return _dedupe_filename(parent_dir_path, filename, suggested_name, separator)
+    return suggested_name
 
 
 def suggest_dir_name(dirname: str, separator: str) -> str:
-    """
-    TODO: Implement intelligent directory suggestion logic.
-
-    For now: return the original directory name unchanged.
-    """
-    return dirname
+    return _apply_separator(_suggest_media_stem(dirname), separator)
 
 
 # ─────────────────────────────────────────────
@@ -129,13 +254,19 @@ def load_files(cfg: dict) -> list[dict]:
                     "path":      p,
                     "directory": display_dir,
                     "name":      fname,
-                    "suggested": suggest_name(fname, cfg["separator"]),
+                    "suggested": suggest_name(
+                        fname,
+                        cfg["separator"],
+                        parent_dir_name=Path(dirpath).name,
+                        parent_dir_path=Path(dirpath),
+                    ),
                     "queued":    False,
                     "new_name":  None,
                     "action":    None,  # "rename" | "add" | "moveup"
                 })
 
         entries.sort(key=lambda e: (e["directory"], e["name"]))
+        _dedupe_entry_suggestions(entries, cfg["separator"])
     except FileNotFoundError:
         print(c(f"[error] Directory not found: {run_dir}", RED))
     return entries
@@ -172,6 +303,7 @@ def load_directories(cfg: dict) -> list[dict]:
                 })
 
         entries.sort(key=lambda e: (e["directory"], e["name"]))
+        _dedupe_entry_suggestions(entries, cfg["separator"])
     except FileNotFoundError:
         print(c(f"[error] Directory not found: {run_dir}", RED))
 
@@ -583,27 +715,33 @@ def cmd_execute(entries: list[dict], run_dir: Path, entry_kind: str = "files") -
             if e["action"] in ("rename", "add"):
                 src = e["path"]
                 dst = src.parent / e["new_name"]
-                if dst.exists():
+                if dst == src:
+                    print(c(f"  • No change: {src.name}", DIM))
+                elif dst.exists():
                     raise FileExistsError(f"Target already exists: {dst.name}")
-                src.rename(dst)
-                e["path"]      = dst
-                e["name"]      = dst.name
-                e["suggested"] = dst.name
-                rel = str(dst.parent.relative_to(run_dir))
-                e["directory"] = "." if rel == "." else rel
-                print(c(f"  ✓ {e['action'].capitalize()}: {src.name}  →  {dst.name}", GREEN))
+                else:
+                    src.rename(dst)
+                    e["path"]      = dst
+                    e["name"]      = dst.name
+                    e["suggested"] = dst.name
+                    rel = str(dst.parent.relative_to(run_dir))
+                    e["directory"] = "." if rel == "." else rel
+                    print(c(f"  ✓ {e['action'].capitalize()}: {src.name}  →  {dst.name}", GREEN))
 
             elif e["action"] == "moveup":
                 src  = e["path"]
                 dest = Path(e["new_name"])
-                if dest.exists():
+                if dest == src:
+                    print(c(f"  • No change: {src.name}", DIM))
+                elif dest.exists():
                     raise FileExistsError(f"Target already exists: {dest}")
-                src.rename(dest)
-                e["path"] = dest
-                rel = str(dest.parent.relative_to(run_dir))
-                e["directory"] = "." if rel == "." else rel
-                e["suggested"] = dest.name
-                print(c(f"  ✓ Moved up: {src.name}  →  {dest.parent.name}/", GREEN))
+                else:
+                    src.rename(dest)
+                    e["path"] = dest
+                    rel = str(dest.parent.relative_to(run_dir))
+                    e["directory"] = "." if rel == "." else rel
+                    e["suggested"] = dest.name
+                    print(c(f"  ✓ Moved up: {src.name}  →  {dest.parent.name}/", GREEN))
 
             e["queued"]   = False
             e["new_name"] = None
