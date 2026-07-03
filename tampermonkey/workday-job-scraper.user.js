@@ -1,27 +1,33 @@
 // ==UserScript==
-// @name         LinkedIn Job Excel Scraper
-// @namespace    http://tampermonkey.net/
-// @version      1.3
-// @description  Add line to clipboard to paste in job posting Excel file (LinkedIn version)
-// @author       You
-// @include      *linkedin.com/jobs/view*
-// @match        https://www.linkedin.com/jobs/view/*
+// @name         Workday Job Excel Scraper
+// @namespace    https://github.com/rbrock44/scripts
+// @version      1.0.1
+// @description  Copy job info from Workday jobs to clipboard for Excel pasting
+// @author       Rbrock44
+// @match        https://*.myworkdayjobs.com/en-US/Careers/job/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=myworkdayjobs.com
 // @grant        none
 // @run-at       document-end
+// @license      MIT
+// @supportURL   https://github.com/rbrock44/scripts/issues
+// @homepageURL  https://github.com/rbrock44/scripts/tree/master/tampermonkey
+// @updateURL    https://raw.githubusercontent.com/rbrock44/scripts/master/tampermonkey/workday-job-scraper.user.js
+// @downloadURL  https://raw.githubusercontent.com/rbrock44/scripts/master/tampermonkey/workday-job-scraper.user.js
 // ==/UserScript==
 
 (function () {
     'use strict';
 
+    const JOB_TITLE_SELECTOR = '[data-automation-id="jobPostingHeader"]';
+    const REQUISITION_ID_SELECTOR = '[data-automation-id="requisitionId"] dd';
     const MAX_RETRIES = 10;
     const RETRY_INTERVAL_MS = 500;
 
     function copyToClipboard(text) {
         navigator.clipboard.writeText(text).then(() => {
-            console.log('Job data copied to clipboard!');
             showNotification('Job data copied to clipboard!');
         }).catch(err => {
-            console.error('Clipboard copy failed, falling back:', err);
+            console.error('Clipboard write failed, using fallback:', err);
             const textArea = document.createElement('textarea');
             textArea.value = text;
             document.body.appendChild(textArea);
@@ -39,7 +45,7 @@
             position: 'fixed',
             top: '20px',
             right: '20px',
-            backgroundColor: '#0073b1', // LinkedIn blue
+            backgroundColor: '#0073b1',
             color: '#fff',
             padding: '10px 15px',
             borderRadius: '5px',
@@ -51,61 +57,53 @@
         setTimeout(() => notification.remove(), 3000);
     }
 
-    function getJobUrl() {
-        const match = window.location.href.match(/https:\/\/www\.linkedin\.com\/jobs\/view\/(\d+)/);
-        if (match && match[1]) {
-            return `https://www.linkedin.com/jobs/view/${match[1]}/`;
-        }
-        return window.location.href;
-    }
-
     function createCopyButton() {
         const button = document.createElement('button');
         button.textContent = 'Copy Job Data';
         Object.assign(button.style, {
-            backgroundColor: '#0073b1',
+            backgroundColor: '#0a66c2',
             color: '#fff',
             border: 'none',
             borderRadius: '20px',
             padding: '10px 16px',
             cursor: 'pointer',
             fontWeight: 'bold',
-            marginLeft: '12px',
             fontSize: '14px',
-            display: 'inline-block'
+            marginTop: '10px'
         });
 
         button.addEventListener('click', () => {
-            // 7th a tag
-            const companyElement = document.querySelectorAll('a')[9];
-            // 4th p tag
-            const jobTitleElement = document.querySelectorAll('h1')[0];
+            const jobTitleEl = document.querySelector(JOB_TITLE_SELECTOR);
+            const reqIdEl = document.querySelector(REQUISITION_ID_SELECTOR);
 
-            if (!jobTitleElement || !companyElement) {
-                alert('Could not find job title or company name.');
+            if (!jobTitleEl || !reqIdEl) {
+                alert('Job title or requisition ID not found. Wait for page to fully load.');
                 return;
             }
 
-            const jobTitle = jobTitleElement.textContent.trim();
-            const company = companyElement.textContent.trim();
-            const websiteFirstFound = 'LinkedIn';
-            const appliedOnCompanySite = '';
+            const jobTitle = jobTitleEl.textContent.trim();
+            const reqId = reqIdEl.textContent.trim();
+            const fullTitle = `${jobTitle} - ${reqId}`;
+            const company = window.location.hostname.split('.')[0]; // e.g., companyname.myworkdayjobs.com
+            const websiteFirstFound = '';
+            const appliedOnCompanySite = 'Yes';
             const customizedResume = '';
-            const jobPost = getJobUrl();
-            const emptyValue1 = '';
-            const emptyValue2 = '';
+            const jobPost = window.location.href;
+            const empty1 = '';
+            const jobPortal = window.location.origin + '/en-US/careers/userHome';
+
             const currentDate = new Date();
             const dateApplied = `${String(currentDate.getMonth() + 1).padStart(2, '0')}/${String(currentDate.getDate()).padStart(2, '0')}/${currentDate.getFullYear()}`;
 
             const jobData = [
-                jobTitle,
+                fullTitle,
                 company,
                 websiteFirstFound,
                 appliedOnCompanySite,
                 customizedResume,
                 jobPost,
-                emptyValue1,
-                emptyValue2,
+                jobPortal,
+                empty1,
                 dateApplied
             ].join('\t');
 
@@ -116,33 +114,23 @@
     }
 
     function tryInject(retriesLeft) {
-        const saveButtons = document.querySelectorAll('.jobs-save-button');
-        // 7th a tag
-        const companyLink = document.querySelectorAll('a')[6];
-        // 4th p tag
-        const jobTitle = document.querySelectorAll('p')[3];
+        const jobTitleEl = document.querySelector(JOB_TITLE_SELECTOR);
+        const reqIdEl = document.querySelector(REQUISITION_ID_SELECTOR);
 
-        if (saveButtons.length >= 2 && companyLink && jobTitle && companyLink.textContent.trim() && jobTitle.textContent.trim()) {
-            // Check if button already exists
-            if (document.getElementById('copy-job-data-button')) return;
-
+        if (jobTitleEl && reqIdEl && !document.getElementById('copy-job-data-button')) {
             const button = createCopyButton();
             button.id = 'copy-job-data-button';
 
-            // Insert after the second save button
-            const secondSaveButton = saveButtons[1];
-            secondSaveButton.insertAdjacentElement('afterend', button);
-
-            console.log('Copy Job Data button injected after second save button!');
+            // Insert after job title
+            jobTitleEl.parentNode.appendChild(button);
+            console.log('Copy Job Data button injected!');
         } else if (retriesLeft > 0) {
-            console.log(saveButtons.length,companyLink,jobTitle, companyLink.textContent.trim(), jobTitle.textContent.trim());
-            console.log('Retrying: retries left: ', retriesLeft);
+            console.log(`Waiting for page to load... (${retriesLeft} retries left)`);
             setTimeout(() => tryInject(retriesLeft - 1), RETRY_INTERVAL_MS);
         } else {
-            console.log('Failed to inject button after maximum retries');
+            console.warn('Failed to inject button after maximum retries.');
         }
     }
-
 
     setTimeout(() => tryInject(MAX_RETRIES), 2000);
 })();
