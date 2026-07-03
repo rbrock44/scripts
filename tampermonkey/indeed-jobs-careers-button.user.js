@@ -1,12 +1,18 @@
 // ==UserScript==
 // @name         Indeed Careers Manual Injector
-// @namespace    http://tampermonkey.net/
-// @version      1.0
+// @namespace    https://github.com/rbrock44/scripts
+// @version      1.0.1
 // @description  Manually inject a "Go To Careers" button on Indeed job pages using a floating refresh button in the corner.
-// @author       You
+// @author       Rbrock44
 // @match        https://www.indeed.com/jobs*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=indeed.com
 // @grant        none
 // @run-at       document-end
+// @license      MIT
+// @supportURL   https://github.com/rbrock44/scripts/issues
+// @homepageURL  https://github.com/rbrock44/scripts/tree/master/tampermonkey
+// @updateURL    https://raw.githubusercontent.com/rbrock44/scripts/master/tampermonkey/indeed-jobs-careers-button.user.js
+// @downloadURL  https://raw.githubusercontent.com/rbrock44/scripts/master/tampermonkey/indeed-jobs-careers-button.user.js
 // ==/UserScript==
 
 (function () {

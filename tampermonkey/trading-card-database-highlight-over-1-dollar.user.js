@@ -1,11 +1,17 @@
 // ==UserScript==
 // @name         TCDB Price Highlighter
-// @namespace    http://tampermonkey.net/
-// @version      1.0
+// @namespace    https://github.com/rbrock44/scripts
+// @version      1.0.1
 // @description  Highlights rows with price >= $0.98 on TCDB Prices pages
 // @author       Rbrock44
 // @match        https://www.tcdb.com/Prices.cfm/sid/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=tcdb.com
 // @grant        none
+// @license      MIT
+// @supportURL   https://github.com/rbrock44/scripts/issues
+// @homepageURL  https://github.com/rbrock44/scripts/tree/master/tampermonkey
+// @updateURL    https://raw.githubusercontent.com/rbrock44/scripts/master/tampermonkey/trading-card-database-highlight-over-1-dollar.user.js
+// @downloadURL  https://raw.githubusercontent.com/rbrock44/scripts/master/tampermonkey/trading-card-database-highlight-over-1-dollar.user.js
 // ==/UserScript==
 
 (function() {

@@ -1,12 +1,18 @@
 // ==UserScript==
 // @name         ZipRecruiter Careers + Excel Row Copy
-// @namespace    http://tampermonkey.net/
-// @version      1.4
+// @namespace    https://github.com/rbrock44/scripts
+// @version      1.4.1
 // @description  Adds "Go To Careers" and "Copy Excel Data" buttons on ZipRecruiter job pages, with full row copy and a floating refresh button to re-inject them on demand.
-// @author       You
+// @author       Rbrock44
 // @match        https://www.ziprecruiter.com/jobs-search?*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=ziprecruiter.com
 // @grant        none
 // @run-at       document-end
+// @license      MIT
+// @supportURL   https://github.com/rbrock44/scripts/issues
+// @homepageURL  https://github.com/rbrock44/scripts/tree/master/tampermonkey
+// @updateURL    https://raw.githubusercontent.com/rbrock44/scripts/master/tampermonkey/ziprecruiter-jobs-scraper-and-careers-button.user.js
+// @downloadURL  https://raw.githubusercontent.com/rbrock44/scripts/master/tampermonkey/ziprecruiter-jobs-scraper-and-careers-button.user.js
 // ==/UserScript==
 
 (function () {

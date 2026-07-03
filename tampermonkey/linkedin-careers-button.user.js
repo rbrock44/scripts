@@ -1,15 +1,21 @@
 // ==UserScript==
 // @name         LinkedIn Careers Button Injector
-// @namespace    http://tampermonkey.net/
-// @version      1.2
+// @namespace    https://github.com/rbrock44/scripts
+// @version      1.2.1
 // @description  Add a "${Company Name} Careers" button to job postings
-// @author       You
+// @author       Rbrock44
 // @match        *://*.linkedin.com/jobs/view/*
 // @match        https://www.linkedin.com/jobs/view/*
 // @match        https://linkedin.com/jobs/view/*
 // @match        *linkedin.com/jobs/view*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=linkedin.com
 // @grant        none
 // @run-at       document-end
+// @license      MIT
+// @supportURL   https://github.com/rbrock44/scripts/issues
+// @homepageURL  https://github.com/rbrock44/scripts/tree/master/tampermonkey
+// @updateURL    https://raw.githubusercontent.com/rbrock44/scripts/master/tampermonkey/linkedin-careers-button.user.js
+// @downloadURL  https://raw.githubusercontent.com/rbrock44/scripts/master/tampermonkey/linkedin-careers-button.user.js
 // ==/UserScript==
 
 (function () {

@@ -1,12 +1,18 @@
 // ==UserScript==
 // @name         Indeed Job Excel Scraper and Career Button
-// @namespace    http://tampermonkey.net/
-// @version      1.1
+// @namespace    https://github.com/rbrock44/scripts
+// @version      1.1.1
 // @description  Add line to clipboard to paste in job posting excel file
-// @author       You
+// @author       Rbrock44
 // @match        https://www.indeed.com/viewjob*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=indeed.com
 // @grant        none
 // @run-at       document-end
+// @license      MIT
+// @supportURL   https://github.com/rbrock44/scripts/issues
+// @homepageURL  https://github.com/rbrock44/scripts/tree/master/tampermonkey
+// @updateURL    https://raw.githubusercontent.com/rbrock44/scripts/master/tampermonkey/indeed-job-scraper-and-careers-button.user.js
+// @downloadURL  https://raw.githubusercontent.com/rbrock44/scripts/master/tampermonkey/indeed-job-scraper-and-careers-button.user.js
 // ==/UserScript==
 
 (function () {

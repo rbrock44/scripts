@@ -1,12 +1,17 @@
 // ==UserScript==
 // @name         Family Recipe Author Scraper
-// @namespace    http://tampermonkey.net/
-// @version      0.1
+// @namespace    https://github.com/rbrock44/scripts
+// @version      0.1.1
 // @description  scrap author names
-// @author       You
+// @author       Rbrock44
 // @match        http://localhost:4200/
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=undefined.localhost
 // @grant        none
+// @license      MIT
+// @supportURL   https://github.com/rbrock44/scripts/issues
+// @homepageURL  https://github.com/rbrock44/scripts/tree/master/tampermonkey
+// @updateURL    https://raw.githubusercontent.com/rbrock44/scripts/master/tampermonkey/family-recipe-author-scraper.user.js
+// @downloadURL  https://raw.githubusercontent.com/rbrock44/scripts/master/tampermonkey/family-recipe-author-scraper.user.js
 // ==/UserScript==
 
 (function() {
