@@ -70,6 +70,30 @@ RESUMING AFTER AN INTERRUPTION (automatic)
     --media). If you change any of those, the script will detect the
     mismatch, warn you, and start fresh automatically.
 
+MEDIA LIBRARY CHECK COLUMN
+    Every row with a title gets an extra column, in_media_library, that
+    checks whether that title (matched by name + year) appears in this
+    public media list file:
+        https://github.com/rbrock44/home-page-media-file/blob/master/media.txt
+    (True / False / blank if the list couldn't be downloaded)
+
+    The list (~13k lines) is downloaded once at the start of a run and
+    parsed into an in-memory lookup dict, so every check afterward is an
+    instant O(1) dictionary lookup — this adds essentially zero time to
+    the run, even at the largest --top-titles/--top-people settings.
+
+    Matching is done on normalized text (lowercased, punctuation stripped)
+    of "Title (Year)", since that's the naming pattern most entries in the
+    list follow. Entries in the list that don't follow that pattern (many
+    TV episode files are named like "Show.S01E01.mkv") simply won't match
+    anything — this is a limitation of the source file, not the script.
+
+    Options:
+        --skip-media-check           Don't fetch/check against the list at all
+        --media-list-url URL         Use a different source list (same format)
+        --media-list-cache PATH      Cache the downloaded list locally so a
+                                      resumed run doesn't re-download it
+
 OTHER OPTIONS
     --media movie      only movies (skip TV)
     --media tv         only TV (skip movies)
@@ -83,6 +107,7 @@ import csv
 import datetime
 import json
 import os
+import re
 import sys
 import time
 import requests
@@ -118,6 +143,85 @@ BASE_URL = "https://api.themoviedb.org/3"
 MIN_VOTE_COUNT_MOVIE = 100   # filters out titles with only a handful of ratings
 MIN_VOTE_COUNT_TV = 50
 REQUEST_PAUSE = 0.25         # be polite to the API / stay under rate limits
+
+MEDIA_LIST_URL = "https://raw.githubusercontent.com/rbrock44/home-page-media-file/master/media.txt"
+# Matches "Some Title (1999)..." — non-greedy title capture so it skips over
+# any other parenthesized text (e.g. "(Extended)") that isn't a 4-digit year.
+MEDIA_LIST_YEAR_RE = re.compile(r"^(.*?)\((\d{4})\)")
+
+
+def normalize_title(title):
+    """Lowercase, strip punctuation, collapse whitespace — so 'Spider-Man:
+    Homecoming' and 'Spider Man Homecoming' compare equal."""
+    if not title:
+        return ""
+    title = title.lower()
+    title = re.sub(r"[^a-z0-9]+", " ", title)
+    return " ".join(title.split())
+
+
+def fetch_media_library_text(url, local_path=None, timeout=20):
+    """Fetch the media list, from a local cached copy if given and present,
+    otherwise from the URL. Returns the raw text, or None on failure."""
+    if local_path and os.path.exists(local_path):
+        log(f"Loading media library list from local cache: {local_path}")
+        with open(local_path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+
+    log(f"Downloading media library list from {url} ...")
+    try:
+        resp = requests.get(url, timeout=timeout)
+        resp.raise_for_status()
+        text = resp.text
+        if local_path:
+            with open(local_path, "w", encoding="utf-8") as f:
+                f.write(text)
+        return text
+    except requests.RequestException as e:
+        log(f"Warning: couldn't download media library list ({e}). "
+            f"The 'in_media_library' column will be left blank.")
+        return None
+
+
+def build_media_library_lookup(text):
+    """
+    Parses lines like 'Movie Title (1999) [1080p].mkv' into a dict:
+        normalized_title -> set of years (as strings) seen for that title
+    Lines without a '(YYYY)' pattern (most TV episode files) are skipped —
+    they simply won't be matchable, which is fine since our TV rows are
+    checked the same way and will just come back as not found.
+    This is built once and used for fast in-memory O(1) lookups afterward.
+    """
+    lookup = {}
+    if not text:
+        return lookup
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        match = MEDIA_LIST_YEAR_RE.match(line)
+        if not match:
+            continue
+        raw_title, year = match.group(1), match.group(2)
+        norm = normalize_title(raw_title)
+        if not norm:
+            continue
+        lookup.setdefault(norm, set()).add(year)
+    return lookup
+
+
+def is_in_media_library(lookup, title, year):
+    """True/False if (title, year) matches an entry in the parsed media list.
+    Returns '' (unknown) if the lookup itself failed to load."""
+    if lookup is None:
+        return ""
+    if not title or not year:
+        return False
+    norm = normalize_title(title)
+    years_for_title = lookup.get(norm)
+    if not years_for_title:
+        return False
+    return str(year) in years_for_title
 
 
 def api_get(path, api_key, params=None, retries=3):
@@ -230,6 +334,13 @@ def main():
     parser.add_argument("--output", default="tmdb_top_lists.csv")
     parser.add_argument("--restart", action="store_true",
                          help="Ignore any existing checkpoint/output and start completely fresh.")
+    parser.add_argument("--skip-media-check", action="store_true",
+                         help="Skip the media-library lookup column entirely.")
+    parser.add_argument("--media-list-url", default=MEDIA_LIST_URL,
+                         help="URL of the media list file to check titles against.")
+    parser.add_argument("--media-list-cache",
+                         help="Optional local file path to cache the media list, "
+                              "so repeated/resumed runs don't need to re-download it.")
     args = parser.parse_args()
 
     if not args.api_key:
@@ -237,7 +348,7 @@ def main():
 
     media_types = ["movie", "tv"] if args.media == "both" else [args.media]
     num_years = args.end_year - args.start_year + 1
-    fieldnames = ["section", "year", "person", "rank", "title", "media_type", "rating", "vote_count"]
+    fieldnames = ["section", "year", "person", "rank", "title", "media_type", "rating", "vote_count", "in_media_library"]
 
     run_settings = {
         "start_year": args.start_year, "end_year": args.end_year,
@@ -279,6 +390,15 @@ def main():
     titles_done = set(checkpoint["titles_done"])
     people_done = set(checkpoint["people_done"])
 
+    # --- Build the media-library lookup once (fast in-memory dict, O(1) lookups) ---
+    media_lookup = None
+    if not args.skip_media_check:
+        media_text = fetch_media_library_text(args.media_list_url, args.media_list_cache)
+        media_lookup = build_media_library_lookup(media_text)
+        if media_text is not None:
+            log(f"Media library list parsed: {len(media_lookup)} unique titled entries with a year "
+                f"(out of {len(media_text.splitlines())} total lines in the file).")
+
     # CSV: append if resuming into an existing file, otherwise start fresh with a header.
     file_mode = "a" if (resuming and os.path.exists(args.output)) else "w"
     write_header = file_mode == "w"
@@ -319,6 +439,7 @@ def main():
                         "media_type": media_type,
                         "rating": t.get("vote_average"),
                         "vote_count": t.get("vote_count"),
+                        "in_media_library": is_in_media_library(media_lookup, title, year),
                     })
 
                 titles_done.add(key)
@@ -356,6 +477,7 @@ def main():
                 "media_type": "",
                 "rating": "",
                 "vote_count": person.get("popularity"),
+                "in_media_library": "",
             })
 
             log(f"({rank}/{len(people)}) {person['name']} — fetching top credits...")
@@ -365,15 +487,17 @@ def main():
                                                   args.top_people_titles, min_votes)
                 for c_rank, c in enumerate(credits, start=1):
                     title = c.get("title") if media_type == "movie" else c.get("name")
+                    credit_year = get_year_of_credit(c, media_type)
                     write_row({
                         "section": f"{person['name']}'s Top {media_type.upper()}",
-                        "year": get_year_of_credit(c, media_type),
+                        "year": credit_year,
                         "person": person["name"],
                         "rank": c_rank,
                         "title": title,
                         "media_type": media_type,
                         "rating": c.get("vote_average"),
                         "vote_count": c.get("vote_count"),
+                        "in_media_library": is_in_media_library(media_lookup, title, credit_year),
                     })
 
             people_done.add(person_id)
