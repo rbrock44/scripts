@@ -36,6 +36,11 @@ This project holds various scripts used in my ecosystem of processes and applica
     * Should be synced with task scheduler to get retrieve automatic git pushes of (drive-status's)[https://github.com/rbrock44/drive-status], kicks off smbConnectionResults.ps1
   * smbConnectionResults.ps1
     * Reads and outputs the status's of various Open Media Vault drives      
+* Powershell
+  * Keep-Repo-Active.ps1
+    * Wired into Task Scheduler to run daily; checks a local repo clone's last commit date and pushes an empty commit once it nears 2 months of inactivity, so scheduled GitHub Actions keep running
+  * Stop-ServiceByName.ps1
+    * Stops a given Windows service by name, waiting for it to fully stop
 * s01
   * bootHPA.sh
     * Will launch/run the Home-Page-Api application
