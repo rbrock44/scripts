@@ -21,8 +21,9 @@
     const btn = findUnsubscribeButton();
     if (btn) {
       btn.addEventListener('click', () => {
-        // let the form submit/turbo update happen before closing
-        setTimeout(() => window.close(), 800);
+        // must close synchronously within the click's user-gesture context,
+        // otherwise Chrome blocks window.close() after a setTimeout delay
+        window.close();
       });
       return;
     }
