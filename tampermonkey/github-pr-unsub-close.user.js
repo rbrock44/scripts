@@ -6,6 +6,8 @@
 // @match        https://github.com/*/*/pull/*
 // @grant        window.close
 // @run-at       document-idle
+// @updateURL    https://raw.githubusercontent.com/rbrock44/scripts/main/tampermonkey/github-pr-unsub-close.user.js
+// @downloadURL  https://raw.githubusercontent.com/rbrock44/scripts/main/tampermonkey/github-pr-unsub-close.user.js
 // ==/UserScript==
 
 (function () {
