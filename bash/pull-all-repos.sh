@@ -29,7 +29,7 @@ for repo in "$workspace_dir"/*/; do
 
     stashed=0
     if [[ -n $(git status --porcelain) ]]; then
-        if git stash push -u -m "sync-all-repos autostash" > /dev/null; then
+        if git stash push -u -m "pull-all-repos autostash" > /dev/null; then
             stashed=1
             warn "stashed local changes"
         else

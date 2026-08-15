@@ -14,6 +14,16 @@ function gpushn {
 }
 Set-Alias gpushn gpushn
 
+function pull-all {
+    bash "C:\workspace\scripts\bash\pull-all-repos.sh"
+}
+Set-Alias pull-all pull-all
+
+function status-all {
+    bash "C:\workspace\scripts\bash\status-all-repos.sh"
+}
+Set-Alias status-all status-all
+
 Import-Module -Name Terminal-Icons
 Import-Module PSReadLine 
 Set-PSReadLineKeyHandler -Chord "Ctrl+f" -Function ForwardWord
