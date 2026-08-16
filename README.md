@@ -38,6 +38,15 @@ This project holds various scripts used in my ecosystem of processes and applica
       * A proxied wildcard DNS record (`AAAA  *  100::`, orange cloud) so unknown subdomains resolve to the edge instead of returning NXDOMAIN
       * A worker route of `*.ryan-brock.com/*` on the zone
     * Add new subdomains to `allowedSubdomains` when they go live, otherwise they'll get bounced to lost
+  * blog-counters.ts
+    * View and like counts for (blog)[https://blog.ryan-brock.com/], stored in Workers KV. The only live service the blog has - if it's down or unconfigured the post still reads fine and the counter just doesn't render
+    * `GET /api/counts/:slug`, `POST /api/views/:slug`, `POST /api/likes/:slug`
+    * Requires three pieces of Cloudflare config:
+      * A worker route of `blog.ryan-brock.com/api/*` on the zone. This is more specific than `*.ryan-brock.com/*`, so it wins and unknown-subdomain-redirect never sees these requests
+      * A KV namespace bound as `COUNTERS`
+      * `blog` present in unknown-subdomain-redirect's `allowedSubdomains` so the rest of the site isn't bounced to lost
+    * Likes are idempotent and views are deduped for 24h against a hashed visitor id; known crawler user-agents are ignored so the numbers aren't mostly Googlebot. Raw IPs are never stored
+    * After deploying, set `countersApi` to `/api` in the blog's `src/site.config.json` and rebuild
 * Home-Media
   * driveStatusRun.ps1
     * Should be synced with task scheduler to get retrieve automatic git pushes of (drive-status's)[https://github.com/rbrock44/drive-status], kicks off smbConnectionResults.ps1
