@@ -2,6 +2,7 @@ const allowedSubdomains = [
   "1705-david",
   "add-recipe",
   "auction-advisor",
+  "blog",
   "cleaning-schedule",
   "compare-achievements",
   "connect-4",
