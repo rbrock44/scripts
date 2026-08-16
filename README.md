@@ -31,6 +31,13 @@ This project holds various scripts used in my ecosystem of processes and applica
   * Useful bash aliases that enhance my life. Move the following to C:\Users\<user>
     * .bashrc
     * .bash_profile
+* Cloudflare-Workers
+  * unknown-subdomain-redirect.ts
+    * Catches requests to subdomains of ryan-brock.com that aren't in the allowed list and redirects them to `lost.ryan-brock.com?from=<subdomain>`; known subdomains pass straight through
+    * Requires two pieces of Cloudflare config to actually fire:
+      * A proxied wildcard DNS record (`AAAA  *  100::`, orange cloud) so unknown subdomains resolve to the edge instead of returning NXDOMAIN
+      * A worker route of `*.ryan-brock.com/*` on the zone
+    * Add new subdomains to `allowedSubdomains` when they go live, otherwise they'll get bounced to lost
 * Home-Media
   * driveStatusRun.ps1
     * Should be synced with task scheduler to get retrieve automatic git pushes of (drive-status's)[https://github.com/rbrock44/drive-status], kicks off smbConnectionResults.ps1
@@ -72,6 +79,8 @@ This project holds various scripts used in my ecosystem of processes and applica
 - Bash
 - Powershell
 - Javascript
+- Typescript
+- Cloudflare Workers
 
 ---
 
