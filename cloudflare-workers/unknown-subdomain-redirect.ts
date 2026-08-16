@@ -31,7 +31,10 @@ export default {
     const subdomain = hostParts[0];
 
     if (!allowedSubdomains.includes(subdomain)) {
-      return Response.redirect("https://lost.my-domain.com", 302);
+      return Response.redirect(
+        `https://lost.ryan-brock.com?from=${encodeURIComponent(subdomain)}`,
+        302
+      );
     }
 
     return fetch(request);
