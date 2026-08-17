@@ -16,6 +16,10 @@ const allowedSubdomains = [
   "home-page-api",
   "home-page",
   "lost",
+  "utilities",
+  "puzzles",
+  "scorekeeping-br-rounds",
+  "woodworking-projects",
   // "www",
 ];
 
