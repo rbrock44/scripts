@@ -18,7 +18,7 @@ const allowedSubdomains = [
   "lost",
   "utilities",
   "puzzles",
-  "scorekeeping-br-rounds",
+  "scorekeeping-by-rounds",
   "woodworking-projects",
   // "www",
 ];
