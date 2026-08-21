@@ -31,6 +31,7 @@ This project holds various scripts used in my ecosystem of processes and applica
   * Useful bash aliases that enhance my life. Move the following to C:\Users\<user>
     * .bashrc
     * .bash_profile
+  * The alias list is mirrored in powershell/Microsoft.PowerShell_profile.ps1
 * Cloudflare-Workers
   * unknown-subdomain-redirect.ts
     * Catches requests to subdomains of ryan-brock.com that aren't in the allowed list and redirects them to `lost.ryan-brock.com?from=<subdomain>`; known subdomains pass straight through
@@ -53,6 +54,9 @@ This project holds various scripts used in my ecosystem of processes and applica
   * smbConnectionResults.ps1
     * Reads and outputs the status's of various Open Media Vault drives      
 * Powershell
+  * Microsoft.PowerShell_profile.ps1
+    * Prompt setup plus the aliases above. Move to C:\Users\<user>\Documents\PowerShell
+    * `Set-Alias` only takes a command name, not a command line, so anything taking arguments is a function with an alias pointing at it
   * Keep-Repo-Active.ps1
     * Wired into Task Scheduler to run daily; checks a local repo clone's last commit date and pushes an empty commit once it nears 2 months of inactivity, so scheduled GitHub Actions keep running
   * Stop-ServiceByName.ps1
