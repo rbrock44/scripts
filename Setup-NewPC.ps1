@@ -23,9 +23,32 @@
     Shows what would be installed without installing anything.
 
 .EXAMPLE
+    .\Setup-NewPC.ps1 -CloneRepos All
+    Skips the interactive checklist and clones every repo under $GitHubUser
+    into $WorkspaceDir. -CloneRepos None skips repo cloning entirely.
+
+.EXAMPLE
     irm https://raw.githubusercontent.com/rbrock44/scripts/main/Setup-NewPC.ps1 | iex
     Downloads and runs the script directly on a brand-new PC that doesn't
-    have this repo cloned yet. Run from an elevated PowerShell prompt.
+    have this repo cloned yet, using every default. Run from an elevated
+    PowerShell prompt. `irm | iex` can't take parameters - see below for
+    passing switches without cloning first.
+
+.EXAMPLE
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/rbrock44/scripts/main/Setup-NewPC.ps1))) -IncludeGaming -IncludeCommunication
+    Same download-and-run, but with parameters. Wrapping the downloaded
+    script in a scriptblock and invoking it with & lets you pass any of
+    this script's switches without saving it to disk first.
+
+.EXAMPLE
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/rbrock44/scripts/main/Setup-NewPC.ps1))) -CloneRepos All
+    Download-and-run that also clones every repo under $GitHubUser into
+    $WorkspaceDir, skipping the interactive checklist.
+
+.EXAMPLE
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/rbrock44/scripts/main/Setup-NewPC.ps1))) -WhatIf
+    Download-and-run in preview mode - shows what would be installed/cloned
+    without doing it.
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
@@ -35,9 +58,13 @@ param(
     [switch]$IncludeDevTools = $true,
     [switch]$IncludeUtilities = $true,
     [switch]$IncludeCommunication,
-    [switch]$IncludeMedia,
     [switch]$IncludeGaming,
-    [switch]$IncludeCloudStorage
+
+    [switch]$IncludeRepoSetup = $true,
+    [string]$GitHubUser = 'rbrock44',
+    [string]$WorkspaceDir = 'C:\workspace',
+    [ValidateSet('Prompt', 'All', 'None')]
+    [string]$CloneRepos = 'Prompt'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,6 +82,9 @@ $Categories = [ordered]@{
             'Windows Terminal'   = 'Microsoft.WindowsTerminal'
             'PowerToys'          = 'Microsoft.PowerToys'
             'Oh My Posh'         = 'JanDeDobbeleer.OhMyPosh'
+            'VLC media player'   = 'VideoLAN.VLC'
+            'Obsidian'           = 'Obsidian.Obsidian'
+            'Kodi'               = 'XBMCFoundation.Kodi'
         }
     }
 
@@ -95,17 +125,11 @@ $Categories = [ordered]@{
         }
     }
 
-    Media = [ordered]@{
-        Enabled  = $IncludeMedia
-        Packages = [ordered]@{
-            'VLC media player' = 'VideoLAN.VLC'
-        }
-    }
-
     Gaming = [ordered]@{
         Enabled  = $IncludeGaming
         Packages = [ordered]@{
             'Steam'                = 'Valve.Steam'
+            'Epic Games Launcher'  = 'EpicGames.EpicGamesLauncher'
         }
     }
 }
@@ -147,6 +171,96 @@ function Install-WingetPackage {
     }
 }
 
+function Test-GhAvailable {
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        Write-Warning "  GitHub CLI (gh) not found - skipping repo checklist. Install it via the DevTools category and re-run."
+        return $false
+    }
+    $null = gh auth status 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "  gh is not authenticated - run 'gh auth login' then re-run to select repos to clone."
+        return $false
+    }
+    return $true
+}
+
+function Invoke-GitClone {
+    param(
+        [Parameter(Mandatory)][string]$RepoUrl,
+        [Parameter(Mandatory)][string]$Destination
+    )
+
+    $repoName = Split-Path $Destination -Leaf
+
+    if (Test-Path $Destination) {
+        Write-Host "  [skip]    $repoName already cloned" -ForegroundColor DarkGray
+        return
+    }
+
+    if ($PSCmdlet.ShouldProcess($repoName, "git clone")) {
+        Write-Host "  [clone]   $repoName" -ForegroundColor Cyan
+        git clone --quiet $RepoUrl $Destination
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "  Failed to clone $repoName - exit code $LASTEXITCODE"
+        }
+    }
+}
+
+# Interactive terminal checklist: Up/Down to move, Space to toggle the repo
+# under the cursor, A/N as shortcuts for select-all/select-none, Enter to
+# continue. -CloneRepos All/None bypass this entirely for non-interactive runs.
+function Show-RepoChecklist {
+    param(
+        [Parameter(Mandatory)][string[]]$Items,
+        [string]$Title = 'Select repos to clone'
+    )
+
+    if ($Items.Count -eq 0) { return @() }
+
+    $selected = [System.Collections.Generic.HashSet[int]]::new()
+    0..($Items.Count - 1) | ForEach-Object { [void]$selected.Add($_) }
+    $cursor = 0
+    $originalCursorVisible = [Console]::CursorVisible
+    [Console]::CursorVisible = $false
+
+    try {
+        :selectionLoop while ($true) {
+            Clear-Host
+            Write-Host $Title -ForegroundColor Yellow
+            Write-Host "  Up/Down move   Space toggle   A select all   N select none   Enter continue`n" -ForegroundColor DarkGray
+
+            for ($i = 0; $i -lt $Items.Count; $i++) {
+                $box = if ($selected.Contains($i)) { '[x]' } else { '[ ]' }
+                $prefix = if ($i -eq $cursor) { '>' } else { ' ' }
+                $color = if ($i -eq $cursor) { 'Cyan' } else { 'White' }
+                Write-Host ("$prefix $box $($Items[$i])") -ForegroundColor $color
+            }
+
+            $key = [Console]::ReadKey($true)
+            switch ($key.Key) {
+                'UpArrow'   { $cursor = [Math]::Max(0, $cursor - 1) }
+                'DownArrow' { $cursor = [Math]::Min($Items.Count - 1, $cursor + 1) }
+                'Spacebar'  {
+                    if ($selected.Contains($cursor)) { [void]$selected.Remove($cursor) }
+                    else { [void]$selected.Add($cursor) }
+                }
+                'A' { 0..($Items.Count - 1) | ForEach-Object { [void]$selected.Add($_) } }
+                'N' { $selected.Clear() }
+                'Enter' { break selectionLoop }
+            }
+        }
+    } finally {
+        [Console]::CursorVisible = $originalCursorVisible
+        Clear-Host
+    }
+
+    $result = @()
+    for ($i = 0; $i -lt $Items.Count; $i++) {
+        if ($selected.Contains($i)) { $result += $Items[$i] }
+    }
+    return $result
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -167,6 +281,45 @@ foreach ($categoryName in $Categories.Keys) {
     foreach ($name in $category.Packages.Keys) {
         Install-WingetPackage -Name $name -Id $category.Packages[$name]
     }
+    Write-Host ""
+}
+
+# ---------------------------------------------------------------------------
+# Workspace repo setup
+# ---------------------------------------------------------------------------
+
+if ($IncludeRepoSetup) {
+    Write-Host "Workspace repo setup" -ForegroundColor Yellow
+
+    if (-not (Test-Path $WorkspaceDir)) {
+        New-Item -ItemType Directory -Path $WorkspaceDir -Force | Out-Null
+    }
+
+    Invoke-GitClone -RepoUrl "https://github.com/$GitHubUser/scripts.git" -Destination (Join-Path $WorkspaceDir 'scripts')
+
+    if (Test-GhAvailable) {
+        $repoNames = gh repo list $GitHubUser --limit 500 --json name --jq '.[].name' 2>$null |
+            Where-Object { $_ -ne 'scripts' } | Sort-Object
+
+        if (-not $repoNames) {
+            Write-Warning "  No repos found for $GitHubUser (or the request failed) - skipping."
+        } else {
+            $toClone = switch ($CloneRepos) {
+                'All'    { $repoNames }
+                'None'   { @() }
+                default  { Show-RepoChecklist -Items $repoNames -Title "Select repos to clone into $WorkspaceDir" }
+            }
+
+            if ($toClone.Count -eq 0) {
+                Write-Host "  No repos selected." -ForegroundColor DarkGray
+            } else {
+                foreach ($repoName in $toClone) {
+                    Invoke-GitClone -RepoUrl "https://github.com/$GitHubUser/$repoName.git" -Destination (Join-Path $WorkspaceDir $repoName)
+                }
+            }
+        }
+    }
+
     Write-Host ""
 }
 
