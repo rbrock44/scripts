@@ -4,24 +4,25 @@
 
 ---
 
-## 📚 Table of Contents
+## Table of Contents
 
-- [What's My Purpose?](#-whats-my-purpose)
-- [How to Use](#-how-to-use)
+- [What's My Purpose?](#whats-my-purpose)
+- [How to Use](#how-to-use)
   - [List of Scripts](#list-of-scripts)
-- [Technologies](#-technologies)
-- [Getting Started (Local Setup)](#-getting-started-local-setup)
+- [Technologies](#technologies)
+- [Getting Started (Local Setup)](#getting-started-local-setup)
   - [Run Locally](#run-locally)
+- [How to Contribute](#how-to-contribute)
 
 ---
 
-## 🧠 What's My Purpose?
+## What's My Purpose?
 
 This project holds various scripts used in my ecosystem of processes and applications. Its grown to include several technologies  
 
 ---
 
-## 🚦 How to Use
+## How to Use
 
 ---
 
@@ -87,7 +88,7 @@ This project holds various scripts used in my ecosystem of processes and applica
 
 ---
 
-## 🛠 Technologies
+## Technologies
 
 - Bash
 - Powershell
@@ -97,7 +98,7 @@ This project holds various scripts used in my ecosystem of processes and applica
 
 ---
 
-## 🚀 Getting Started (Local Setup)
+## Getting Started (Local Setup)
 
 * Install [node](https://nodejs.org/en)
 * Clone [repo](https://github.com/rbrock44/scripts)
@@ -107,5 +108,12 @@ This project holds various scripts used in my ecosystem of processes and applica
 ### Run Locally
 
 Run a script in the appropiate terminal
+
+---
+
+## How to Contribute
+
+Found a typo or a small, obvious fix? Open a PR directly.
+Want to change behavior or add something bigger? Open an issue first so we can talk it through before you put in the work.
 
 ---
