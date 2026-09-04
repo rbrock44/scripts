@@ -21,6 +21,46 @@ ok()     { echo "  ${green}$1${reset}"; }
 warn()   { echo "  ${yellow}$1${reset}"; }
 error()  { echo "  ${red}$1${reset}"; }
 
+# Per-machine settings live in settings.json next to this script. That file is
+# gitignored so it stays unique to the machine - see settings.example.json for
+# the template. ignoredRepos is a list of repo folder names (globs allowed)
+# under $workspace_dir that this script skips entirely.
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+settings_file="$script_dir/settings.json"
+
+read_ignored_repos='import json,sys;[print(name) for name in json.load(open(sys.argv[1],encoding="utf-8-sig")).get("ignoredRepos") or []]'
+
+ignored_patterns=()
+if [ -f "$settings_file" ]; then
+    python_bin=""
+    for candidate in python3 python py; do
+        if command -v "$candidate" > /dev/null 2>&1; then
+            python_bin="$candidate"
+            break
+        fi
+    done
+
+    if [ -z "$python_bin" ]; then
+        warn "python not found, ignoring $settings_file"
+    elif ! settings_output=$("$python_bin" -c "$read_ignored_repos" "$settings_file" 2>&1); then
+        error "could not read $settings_file (invalid JSON?), ignoring it"
+    else
+        while IFS= read -r line; do
+            line="${line%$'\r'}"
+            [ -n "$line" ] && ignored_patterns+=("$line")
+        done <<< "$settings_output"
+    fi
+fi
+
+is_ignored() {
+    local name="$1" pattern
+    for pattern in "${ignored_patterns[@]}"; do
+        # shellcheck disable=SC2053 - pattern is meant to glob
+        [[ $name == $pattern ]] && return 0
+    done
+    return 1
+}
+
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
@@ -112,6 +152,7 @@ pull_repo() {
 for repo in "$workspace_dir"/*/; do
     repo="${repo%/}"
     [ -d "$repo/.git" ] || continue
+    is_ignored "$(basename "$repo")" && continue
 
     pull_repo "$repo" &
 
@@ -126,6 +167,7 @@ any_noteworthy=0
 for repo in "$workspace_dir"/*/; do
     repo="${repo%/}"
     [ -d "$repo/.git" ] || continue
+    is_ignored "$(basename "$repo")" && continue
     repo_name=$(basename "$repo")
     if [ -s "$tmp_dir/$repo_name" ]; then
         any_noteworthy=1

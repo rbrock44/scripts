@@ -1,0 +1,6 @@
+{
+  "ignoredRepos": [
+    "old-project",
+    "*-archive"
+  ]
+}

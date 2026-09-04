@@ -33,6 +33,13 @@ This project holds various scripts used in my ecosystem of processes and applica
     * .bashrc
     * .bash_profile
   * The alias list is mirrored in powershell/Microsoft.PowerShell_profile.ps1
+  * pull-all-repos.sh
+    * Syncs every repo under c:/workspace with its main/master branch, stashing and restoring local changes; run via the `pull-all` alias
+  * status-all-repos.sh
+    * Prints only the repos under c:/workspace that are dirty, ahead/behind, or have no upstream; run via the `status-all` alias
+  * settings.example.json
+    * Template for the per-machine settings both of those scripts read. Copy it to bash/settings.json, which is gitignored so it stays unique to the machine
+    * `ignoredRepos` - repo folder names under c:/workspace to skip entirely; globs like `*-archive` work. Missing file, missing key, or an empty list means nothing is skipped
 * Cloudflare-Workers
   * unknown-subdomain-redirect.ts
     * Catches requests to subdomains of ryan-brock.com that aren't in the allowed list and redirects them to `lost.ryan-brock.com?from=<subdomain>`; known subdomains pass straight through
