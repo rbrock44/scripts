@@ -202,6 +202,15 @@ def _dedupe_entry_suggestions(entries: list[dict], separator: str):
             entry["suggested"] = f"{stem}{delimiter}{index}{suffix}"
 
 
+def _is_match(entry: dict) -> bool:
+    return entry["name"] == entry["suggested"]
+
+
+def _sort_entries(entries: list[dict]):
+    """Sort by directory/name, with entries already matching their suggestion last."""
+    entries.sort(key=lambda e: (_is_match(e), e["directory"], e["name"]))
+
+
 def suggest_name(
     filename: str,
     separator: str,
@@ -262,11 +271,12 @@ def load_files(cfg: dict) -> list[dict]:
                     ),
                     "queued":    False,
                     "new_name":  None,
-                    "action":    None,  # "rename" | "add" | "moveup"
+                    "action":    None,  # "rename" | "add" | "moveup" | "delete"
                 })
 
         entries.sort(key=lambda e: (e["directory"], e["name"]))
         _dedupe_entry_suggestions(entries, cfg["separator"])
+        _sort_entries(entries)
     except FileNotFoundError:
         print(c(f"[error] Directory not found: {run_dir}", RED))
     return entries
@@ -304,6 +314,7 @@ def load_directories(cfg: dict) -> list[dict]:
 
         entries.sort(key=lambda e: (e["directory"], e["name"]))
         _dedupe_entry_suggestions(entries, cfg["separator"])
+        _sort_entries(entries)
     except FileNotFoundError:
         print(c(f"[error] Directory not found: {run_dir}", RED))
 
@@ -314,7 +325,7 @@ def load_directories(cfg: dict) -> list[dict]:
 #  Adaptive column layout + wrapping
 # ─────────────────────────────────────────────
 ID_W     = 5
-STATUS_W = 12   # "● RENAME" / "● MOVE UP" / "● ADD"
+STATUS_W = 12   # "● RENAME" / "● MOVE UP" / "● ADD" / "● DELETE"
 GAP      = 2
 
 def _col_widths(total_width: int) -> tuple[int, int, int]:
@@ -443,12 +454,25 @@ def print_table(
     print(c(f"  {header}", BOLD + DIM))
     print(c("  " + "─" * (tw - 4), DIM))
 
+    match_divider_shown = False
     for i, e in enumerate(entries, start=1):
         sug_raw = e["new_name"] if e["new_name"] else e["suggested"]
 
         action = e["action"] if e["queued"] else None
 
-        if action == "moveup":
+        if _is_match(e) and not match_divider_shown:
+            match_divider_shown = True
+            label = " already matching suggested name "
+            print(c("\n  ──" + label + "─" * max(0, tw - 8 - len(label)), DIM))
+
+        if action == "delete":
+            status_str   = "● DELETE"
+            color_status = RED + BOLD
+            color_idx    = BOLD
+            color_dir    = DIM
+            color_cur    = RED
+            color_sug    = RED + DIM
+        elif action == "moveup":
             status_str   = "● MOVE UP"
             color_status = MAGENTA + BOLD
             color_idx    = BOLD
@@ -469,6 +493,13 @@ def print_table(
             color_dir    = DIM
             color_cur    = WHITE
             color_sug    = GREEN + BOLD
+        elif _is_match(e):
+            status_str   = "= MATCH"
+            color_status = CYAN + DIM
+            color_idx    = DIM
+            color_dir    = DIM
+            color_cur    = CYAN + DIM
+            color_sug    = CYAN + DIM
         else:
             status_str   = "○"
             color_status = DIM
@@ -499,6 +530,7 @@ def _print_commands(mode: str):
             ("rn / rename <id>",            "Queue a file for rename — opens suggested name to edit"),
             ("a / add <id|list|range>",     "Queue file(s) using the suggested name as-is"),
             ("mu / moveup <id|list|range>", "Move file(s) up one directory"),
+            ("d  / delete <id|list|range>", "Mark file(s) for PERMANENT deletion"),
             ("i  / ignore <id|list|range>", "Ignore file(s) — persists to config"),
             ("rm / remove <id|list|range>", "Remove file(s) from queue"),
             ("exe / execute",               "Execute all queued actions"),
@@ -634,6 +666,41 @@ def cmd_moveup(args: str, entries: list[dict], run_dir: Path):
     input(c("  [Enter to continue]", DIM))
 
 
+def cmd_delete(args: str, entries: list[dict]):
+    """Queue file(s) for permanent deletion."""
+    try:
+        indices = parse_ids(args, len(entries))
+    except ValueError as exc:
+        print(c(f"[error] {exc}", RED))
+        input(c("  [Enter to continue]", DIM))
+        return
+
+    for idx in indices:
+        e = entries[idx]
+        e["queued"]   = True
+        e["action"]   = "delete"
+        e["new_name"] = None
+        print(c(f"  ✓ Queued delete: {e['directory']}/{e['name']}", RED))
+
+    input(c("  [Enter to continue]", DIM))
+
+
+def remove_empty_dirs(dirs: set[Path], run_dir: Path):
+    """Remove each directory if empty, walking up toward (never including) run_dir."""
+    for d in sorted(dirs, key=lambda p: len(p.parts), reverse=True):
+        current = d
+        while current != run_dir and run_dir in current.parents:
+            try:
+                if not current.exists() or any(current.iterdir()):
+                    break
+                current.rmdir()
+                print(c(f"  ✓ Removed empty folder: {current.relative_to(run_dir)}", GREEN))
+            except OSError as exc:
+                print(c(f"  ✗ Could not remove {current}: {exc}", RED))
+                break
+            current = current.parent
+
+
 def cmd_ignore(
     args: str,
     entries: list[dict],
@@ -701,6 +768,12 @@ def cmd_execute(entries: list[dict], run_dir: Path, entry_kind: str = "files") -
         elif e["action"] == "moveup":
             dest = Path(e["new_name"])
             print(f"    {c('MOVE UP', MAGENTA)}  {c(e['directory'] + '/' + e['name'], WHITE)}  →  {c(dest.parent.name + '/', MAGENTA)}")
+        elif e["action"] == "delete":
+            print(f"    {c('DELETE', RED + BOLD)}   {c(e['directory'] + '/' + e['name'], RED)}")
+
+    delete_count = sum(1 for e in queued if e["action"] == "delete")
+    if delete_count:
+        print(c(f"\n  WARNING: {delete_count} file(s) will be permanently deleted.", RED + BOLD))
 
     print()
     confirm = input(c("  Proceed? [y/N] > ", CYAN)).strip().lower()
@@ -710,6 +783,7 @@ def cmd_execute(entries: list[dict], run_dir: Path, entry_kind: str = "files") -
         return False
 
     errors = []
+    touched_dirs: set[Path] = set()
     for e in queued:
         try:
             if e["action"] in ("rename", "add"):
@@ -737,11 +811,18 @@ def cmd_execute(entries: list[dict], run_dir: Path, entry_kind: str = "files") -
                     raise FileExistsError(f"Target already exists: {dest}")
                 else:
                     src.rename(dest)
+                    touched_dirs.add(src.parent)
                     e["path"] = dest
                     rel = str(dest.parent.relative_to(run_dir))
                     e["directory"] = "." if rel == "." else rel
                     e["suggested"] = dest.name
                     print(c(f"  ✓ Moved up: {src.name}  →  {dest.parent.name}/", GREEN))
+
+            elif e["action"] == "delete":
+                src = e["path"]
+                src.unlink()
+                touched_dirs.add(src.parent)
+                print(c(f"  ✓ Deleted: {src.name}", GREEN))
 
             e["queued"]   = False
             e["new_name"] = None
@@ -750,6 +831,8 @@ def cmd_execute(entries: list[dict], run_dir: Path, entry_kind: str = "files") -
         except Exception as exc:
             errors.append((e["name"], str(exc)))
             print(c(f"  ✗ {e['name']}: {exc}", RED))
+
+    remove_empty_dirs(touched_dirs, run_dir)
 
     if errors:
         print(c(f"\n  {len(errors)} error(s) occurred.", RED))
@@ -772,6 +855,9 @@ COMMAND_ALIASES: dict[str, str] = {
     "add":     "add",
     "mu":      "mu",
     "moveup":  "mu",
+    "d":       "del",
+    "del":     "del",
+    "delete":  "del",
     "i":       "i",
     "ignore":  "i",
     "rm":      "rm",
@@ -860,6 +946,16 @@ def main():
             else:
                 cmd_moveup(rest, entries, run_dir)
 
+        elif command == "del":
+            if mode != "files":
+                print(c("[error] delete is only available in file mode. Use rf first.", RED))
+                input(c("  [Enter to continue]", DIM))
+            elif not rest:
+                print(c("[error] Usage: d/delete <id|list|range>", RED))
+                input(c("  [Enter to continue]", DIM))
+            else:
+                cmd_delete(rest, entries)
+
         elif command == "i":
             if not rest:
                 print(c("[error] Usage: i/ignore <id|list|range>", RED))
@@ -881,13 +977,14 @@ def main():
             if mode == "files":
                 if cmd_execute(entries, run_dir, entry_kind="files"):
                     file_entries = load_files(cfg)
+                    dir_entries  = load_directories(cfg)
             else:
                 if cmd_execute(entries, run_dir, entry_kind="directories"):
                     dir_entries  = load_directories(cfg)
                     file_entries = load_files(cfg)
 
         else:
-            print(c(f"[error] Unknown command '{raw_cmd}'. Try rf/rd, rn, add, mu, i, rm, exe, or q.", RED))
+            print(c(f"[error] Unknown command '{raw_cmd}'. Try rf/rd, rn, add, mu, d, i, rm, exe, or q.", RED))
             input(c("  [Enter to continue]", DIM))
 
     print(c("\n  Goodbye.\n", DIM))
