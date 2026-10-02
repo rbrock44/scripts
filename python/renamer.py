@@ -14,6 +14,44 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
+try:
+    import readline  # noqa: F401  — arrow-key line editing for input() on macOS/Linux
+except ImportError:
+    pass
+
+
+def _relaunch_in_console():
+    """
+    Git Bash hands native Windows programs a pipe instead of a console, so input()
+    gets no line editing and arrow keys come through as raw escape codes. Re-run
+    under winpty (bundled with Git Bash) to get a real console.
+    """
+    if (
+        os.name == "nt"
+        and os.environ.get("MSYSTEM")
+        and not os.environ.get("RENAMER_IN_WINPTY")
+        and not sys.stdin.isatty()
+        and shutil.which("winpty")
+    ):
+        import subprocess
+        env = dict(os.environ, RENAMER_IN_WINPTY="1")
+        sys.exit(subprocess.call(["winpty", sys.executable, *sys.argv], env=env))
+
+
+def _enable_ansi_colors():
+    """Windows consoles (including winpty's) print raw ANSI codes unless VT processing is on."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        mode = ctypes.c_uint32()
+        if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            kernel32.SetConsoleMode(handle, mode.value | 0x0004)  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+    except Exception:
+        pass
+
 # ─────────────────────────────────────────────
 #  ANSI color helpers
 # ─────────────────────────────────────────────
@@ -874,6 +912,9 @@ COMMAND_ALIASES: dict[str, str] = {
 #  Main REPL
 # ─────────────────────────────────────────────
 def main():
+    _relaunch_in_console()
+    _enable_ansi_colors()
+
     parser = argparse.ArgumentParser(description="Interactive file renaming tool")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH,
                         help="Path to JSON config file")
