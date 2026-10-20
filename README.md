@@ -77,6 +77,8 @@ This project holds various scripts used in my ecosystem of processes and applica
   * serveHP.sh
     * Will launch/run the Home-Page web application
 * Tampermonkey
+  * auction-ninja-melt-value-highlighter.user.js
+    * Pulls live spot prices from (home-page-api)[https://home-page-api.ryan-brock.com/spot-price], parses metal + weight from AuctionNinja lot titles, and highlights lots bid under 80% of melt (darker green per extra 10% under)
   * family-recipe-author-scraper.js
     * Grabs all unique authors from (family recipe website)[https://family-recipes.ryan-brock.com/]
   * youtube-continuer.js
